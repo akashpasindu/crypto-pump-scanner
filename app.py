@@ -133,7 +133,6 @@ def detect_candlestick_pattern(df):
         return "Three Black Crows 🩸"
     return "Volume Breakout ⚡"
 
-# ================= AI ENGINES =================
 def analyze_scanner_ai(signal_type, coin, price, change, volume_spike, rsi, pattern, dom_info, btc_status, api_key):
     if not api_key:
         return "N/A"
@@ -200,17 +199,16 @@ def run_universal_theory_analysis(coin, price, ohlcv_text, rsi, ema20, ema50, at
     except Exception as e:
         return {"error": f"Execution error: {e}"}
 
-# ================= GLOBAL STATE & SIDEBAR =================
 @st.cache_resource
 def get_global_state():
     return {"last_alert_time": {}}
 
 global_state = get_global_state()
 
+# Sidebar
 st.sidebar.header("⚙️ General Settings")
 gemini_key = st.sidebar.text_input("Gemini API Key", value=DEFAULT_GEMINI_KEY, type="password")
 
-# Scanner Sidebar Filters
 st.sidebar.header("📡 24/7 Scanner Filters")
 scan_mode = st.sidebar.radio("Scanner Direction", ["Both (Pump & Dump)", "Pump Only (Long)", "Dump Only (Short)"])
 volume_threshold = st.sidebar.slider("Volume Spike Multiplier", 1.2, 5.0, 1.5, step=0.1)
@@ -219,7 +217,7 @@ pump_rsi_min = st.sidebar.slider("Pump: Min RSI", 30, 60, 45)
 pump_rsi_max = st.sidebar.slider("Pump: Max RSI", 60, 85, 75)
 dump_rsi_min = st.sidebar.slider("Dump: Min RSI", 15, 40, 25)
 dump_rsi_max = st.sidebar.slider("Dump: Max RSI", 40, 60, 55)
-limit_pairs = st.sidebar.number_input("Scan Pairs Limit", min_value=10, max_value=150, value=60, step=10)
+limit_pairs = st.sidebar.number_input("Scan Pairs Limit", min_value=10, max_value=100, value=30, step=10)
 
 def check_btc_trend():
     try:
@@ -245,108 +243,10 @@ def check_1h_trend(raw_symbol, current_price, signal_type):
     except Exception:
         return True
 
-btc_status, btc_msg = check_btc_trend()
+# ================= TABS =================
+tab_theory, tab_scanner = st.tabs(["🏛️ Multi-Theory Custom Analyzer", "📡 24/7 Autonomous Scanner"])
 
-# ================= TABS: 24/7 SCANNER & MULTI-THEORY ANALYZER =================
-tab_scanner, tab_theory = st.tabs(["📡 24/7 Autonomous Scanner", "🏛️ Multi-Theory Custom Analyzer"])
-
-# ----------------- TAB 1: 24/7 MARKET SCANNER -----------------
-with tab_scanner:
-    st.subheader("📡 Live 24/7 Autonomous Market Scanner")
-    st.caption(f"🛡️ Market Context: {btc_msg} | Scanner Status: Active 24/7 Cloud Background")
-
-    def scan_market_autonomous():
-        alerts = []
-        res = requests.get(f"{BASE_URL}/ticker/24hr", timeout=10)
-        if res.status_code != 200:
-            return alerts
-        tickers = res.json()
-        active_usdt_pairs = []
-        for t in tickers:
-            symbol = t.get('symbol', '')
-            if symbol.endswith('USDT') and not symbol.endswith(('UPUSDT', 'DOWNUSDT', 'BEARUSDT', 'BULLUSDT')):
-                active_usdt_pairs.append({'symbol': symbol, 'quoteVolume': float(t.get('quoteVolume', 0)), 'last': float(t.get('lastPrice', 0))})
-        sorted_pairs = sorted(active_usdt_pairs, key=lambda x: x['quoteVolume'], reverse=True)[:limit_pairs]
-        current_time = time.time()
-        
-        for item in sorted_pairs:
-            raw_symbol = item['symbol']
-            display_symbol = f"{raw_symbol[:-4]}/USDT"
-            real_time_price = item['last']
-            if not real_time_price or raw_symbol == 'BTCUSDT':
-                continue
-            try:
-                kline_res = requests.get(f"{BASE_URL}/klines", params={'symbol': raw_symbol, 'interval': '15m', 'limit': 40}, timeout=5)
-                if kline_res.status_code != 200:
-                    continue
-                df = pd.DataFrame(kline_res.json(), columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])
-                for col in ['close', 'open', 'high', 'low', 'volume']:
-                    df[col] = df[col].astype(float)
-                
-                rsi_series = calculate_rsi(df['close'], period=14)
-                ema_series = df['close'].ewm(span=20, adjust=False).mean()
-                atr_val = calculate_atr(df, period=14)
-                pattern_found = detect_candlestick_pattern(df)
-                
-                current_rsi = rsi_series.iloc[-1]
-                current_ema = ema_series.iloc[-1]
-                avg_volume = df['volume'][:-1].mean()
-                current_volume = df['volume'].iloc[-1]
-                open_price = df['open'].iloc[-1]
-                live_price_change = ((real_time_price - open_price) / open_price) * 100
-                is_vol_spike = current_volume > (avg_volume * volume_threshold)
-                buyer_ratio, seller_ratio = get_orderbook_ratio(raw_symbol)
-                
-                signal = None
-                if scan_mode in ["Both (Pump & Dump)", "Pump Only (Long)"]:
-                    if is_vol_spike and live_price_change >= price_threshold and (pump_rsi_min <= current_rsi <= pump_rsi_max) and real_time_price > current_ema:
-                        if not (btc_status == "BEARISH") and check_1h_trend(raw_symbol, real_time_price, "PUMP") and buyer_ratio >= 55.0:
-                            signal = "PUMP"
-                if not signal and scan_mode in ["Both (Pump & Dump)", "Dump Only (Short)"]:
-                    if is_vol_spike and live_price_change <= -price_threshold and (dump_rsi_min <= current_rsi <= dump_rsi_max) and real_time_price < current_ema:
-                        if not (btc_status == "BULLISH") and check_1h_trend(raw_symbol, real_time_price, "DUMP") and seller_ratio >= 55.0:
-                            signal = "DUMP"
-                
-                if signal:
-                    sl_val = max(0.000001, real_time_price - (atr_val * 1.5)) if signal == "PUMP" else (real_time_price + (atr_val * 1.5))
-                    tp1_val = (real_time_price + (atr_val * 2.5)) if signal == "PUMP" else max(0.000001, real_time_price - (atr_val * 2.5))
-                    tp2_val = (real_time_price + (atr_val * 4.0)) if signal == "PUMP" else max(0.000001, real_time_price - (atr_val * 4.0))
-                    dom_str = f"Buyers {buyer_ratio}%" if signal == "PUMP" else f"Sellers {seller_ratio}%"
-                    change_str = f"{live_price_change:+.2f}"
-                    
-                    fmt = ".4f" if real_time_price >= 1 else ".6f"
-                    ai_v = analyze_scanner_ai(signal, display_symbol, real_time_price, change_str, f"{round(current_volume/avg_volume,1)}x", round(current_rsi,1), pattern_found, dom_str, btc_msg, gemini_key)
-                    
-                    alerts.append({
-                        "raw_symbol": raw_symbol, "Type": "🟢 PUMP" if signal == "PUMP" else "🔴 DUMP",
-                        "Coin": display_symbol, "Live Price ($)": format(real_time_price, fmt),
-                        "15m Change": f"{change_str}%", "RSI": f"{current_rsi:.1f}", "Pattern": pattern_found,
-                        "AI Verdict": ai_v, "TP 1": format(tp1_val, fmt), "Stop Loss": format(sl_val, fmt),
-                        "Vol Spike": f"{round(current_volume/avg_volume,1)}x", "Dominance": dom_str
-                    })
-                    
-                    last_sent = global_state["last_alert_time"].get(display_symbol, 0)
-                    if current_time - last_sent > 3600:
-                        send_scanner_telegram_alert(signal, display_symbol, format(real_time_price, fmt), change_str, f"{round(current_volume/avg_volume,1)}x", f"{current_rsi:.1f}", format(tp1_val, fmt), format(tp2_val, fmt), format(sl_val, fmt), dom_str, pattern_found, ai_v)
-                        global_state["last_alert_time"][display_symbol] = current_time
-            except Exception:
-                continue
-        return alerts
-
-    with st.spinner("Market එක ස්කෑන් වෙමින් පවතී..."):
-        scanner_results = scan_market_autonomous()
-    
-    if scanner_results:
-        st.success(f"🔥 කාසි {len(scanner_results)} ක් හමුවිය! (Telegram Alert යවන ලදී)")
-        play_alert_sound()
-        st.dataframe(pd.DataFrame(scanner_results).drop(columns=['raw_symbol']), use_container_width=True)
-        for coin_d in scanner_results:
-            st.write(f"**{coin_d['Type']} — {coin_d['Coin']} | Pattern: `{coin_d['Pattern']}` | RSI: `{coin_d['RSI']}`**")
-            render_tradingview_widget(coin_d['raw_symbol'])
-    else:
-        st.info("මේ මොහොතේ ස්කෑනරයේ කොන්දේසි සපුරාලූ කාසි නොමැත. Cron-Job මඟින් පසුබිමෙන් පරීක්ෂා කරමින් පවතී.")
-
-# ----------------- TAB 2: MULTI-THEORY CUSTOM ANALYZER -----------------
+# ----------------- TAB 1: MULTI-THEORY CUSTOM ANALYZER -----------------
 with tab_theory:
     st.subheader("🏛️ Universal Multi-Theory Analyzer (On-Demand Deep Dive)")
     st.write("ඕනෑම කාසියක් තෝරාගෙන ලොව ප්‍රමුඛ පෙළේ Technical Theories එකවර හෝ අවශ්‍ය ප්‍රමාණය තෝරා ගැඹුරු විශ්ලේෂණයක් සහ Actionable Trade Setup එකක් ලබාගන්න.")
@@ -461,3 +361,99 @@ with tab_theory:
                         st.error(f"Binance හි `{custom_pair}` හමු නොවීය.")
                 except Exception as ex:
                     st.error(f"දෝෂයක් ඇති විය: {ex}")
+
+# ----------------- TAB 2: 24/7 MARKET SCANNER -----------------
+with tab_scanner:
+    btc_status, btc_msg = check_btc_trend()
+    st.subheader("📡 Live Market Scanner")
+    st.caption(f"🛡️ Market Context: {btc_msg}")
+
+    run_scan_manual = st.button("🔍 Scan Market Now", use_container_width=True)
+
+    def scan_market_now():
+        alerts = []
+        res = requests.get(f"{BASE_URL}/ticker/24hr", timeout=10)
+        if res.status_code != 200:
+            return alerts
+        tickers = res.json()
+        active_usdt_pairs = []
+        for t in tickers:
+            symbol = t.get('symbol', '')
+            if symbol.endswith('USDT') and not symbol.endswith(('UPUSDT', 'DOWNUSDT', 'BEARUSDT', 'BULLUSDT')):
+                active_usdt_pairs.append({'symbol': symbol, 'quoteVolume': float(t.get('quoteVolume', 0)), 'last': float(t.get('lastPrice', 0))})
+        sorted_pairs = sorted(active_usdt_pairs, key=lambda x: x['quoteVolume'], reverse=True)[:limit_pairs]
+        current_time = time.time()
+        
+        for item in sorted_pairs:
+            raw_symbol = item['symbol']
+            display_symbol = f"{raw_symbol[:-4]}/USDT"
+            real_time_price = item['last']
+            if not real_time_price or raw_symbol == 'BTCUSDT':
+                continue
+            try:
+                kline_res = requests.get(f"{BASE_URL}/klines", params={'symbol': raw_symbol, 'interval': '15m', 'limit': 40}, timeout=5)
+                if kline_res.status_code != 200:
+                    continue
+                df = pd.DataFrame(kline_res.json(), columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])
+                for col in ['close', 'open', 'high', 'low', 'volume']:
+                    df[col] = df[col].astype(float)
+                
+                rsi_series = calculate_rsi(df['close'], period=14)
+                ema_series = df['close'].ewm(span=20, adjust=False).mean()
+                atr_val = calculate_atr(df, period=14)
+                pattern_found = detect_candlestick_pattern(df)
+                
+                current_rsi = rsi_series.iloc[-1]
+                current_ema = ema_series.iloc[-1]
+                avg_volume = df['volume'][:-1].mean()
+                current_volume = df['volume'].iloc[-1]
+                open_price = df['open'].iloc[-1]
+                live_price_change = ((real_time_price - open_price) / open_price) * 100
+                is_vol_spike = current_volume > (avg_volume * volume_threshold)
+                buyer_ratio, seller_ratio = get_orderbook_ratio(raw_symbol)
+                
+                signal = None
+                if scan_mode in ["Both (Pump & Dump)", "Pump Only (Long)"]:
+                    if is_vol_spike and live_price_change >= price_threshold and (pump_rsi_min <= current_rsi <= pump_rsi_max) and real_time_price > current_ema:
+                        if not (btc_status == "BEARISH") and check_1h_trend(raw_symbol, real_time_price, "PUMP") and buyer_ratio >= 55.0:
+                            signal = "PUMP"
+                if not signal and scan_mode in ["Both (Pump & Dump)", "Dump Only (Short)"]:
+                    if is_vol_spike and live_price_change <= -price_threshold and (dump_rsi_min <= current_rsi <= dump_rsi_max) and real_time_price < current_ema:
+                        if not (btc_status == "BULLISH") and check_1h_trend(raw_symbol, real_time_price, "DUMP") and seller_ratio >= 55.0:
+                            signal = "DUMP"
+                
+                if signal:
+                    sl_val = max(0.000001, real_time_price - (atr_val * 1.5)) if signal == "PUMP" else (real_time_price + (atr_val * 1.5))
+                    tp1_val = (real_time_price + (atr_val * 2.5)) if signal == "PUMP" else max(0.000001, real_time_price - (atr_val * 2.5))
+                    tp2_val = (real_time_price + (atr_val * 4.0)) if signal == "PUMP" else max(0.000001, real_time_price - (atr_val * 4.0))
+                    dom_str = f"Buyers {buyer_ratio}%" if signal == "PUMP" else f"Sellers {seller_ratio}%"
+                    change_str = f"{live_price_change:+.2f}"
+                    
+                    fmt = ".4f" if real_time_price >= 1 else ".6f"
+                    ai_v = analyze_scanner_ai(signal, display_symbol, real_time_price, change_str, f"{round(current_volume/avg_volume,1)}x", round(current_rsi,1), pattern_found, dom_str, btc_msg, gemini_key)
+                    
+                    alerts.append({
+                        "raw_symbol": raw_symbol, "Type": "🟢 PUMP" if signal == "PUMP" else "🔴 DUMP",
+                        "Coin": display_symbol, "Live Price ($)": format(real_time_price, fmt),
+                        "15m Change": f"{change_str}%", "RSI": f"{current_rsi:.1f}", "Pattern": pattern_found,
+                        "AI Verdict": ai_v, "TP 1": format(tp1_val, fmt), "Stop Loss": format(sl_val, fmt),
+                        "Vol Spike": f"{round(current_volume/avg_volume,1)}x", "Dominance": dom_str
+                    })
+                    
+                    last_sent = global_state["last_alert_time"].get(display_symbol, 0)
+                    if current_time - last_sent > 3600:
+                        send_scanner_telegram_alert(signal, display_symbol, format(real_time_price, fmt), change_str, f"{round(current_volume/avg_volume,1)}x", f"{current_rsi:.1f}", format(tp1_val, fmt), format(tp2_val, fmt), format(sl_val, fmt), dom_str, pattern_found, ai_v)
+                        global_state["last_alert_time"][display_symbol] = current_time
+            except Exception:
+                continue
+        return alerts
+
+    if run_scan_manual:
+        with st.spinner("Market එක Scan වෙමින් පවතී..."):
+            results = scan_market_now()
+            if results:
+                st.success(f"🔥 කාසි {len(results)} ක් හමුවිය!")
+                play_alert_sound()
+                st.dataframe(pd.DataFrame(results).drop(columns=['raw_symbol']), use_container_width=True)
+            else:
+                st.info("මේ මොහොතේ කොන්දේසි සපුරාලූ කාසි හමු නොවීය.")
