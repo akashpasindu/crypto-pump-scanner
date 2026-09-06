@@ -10,51 +10,48 @@ import xml.etree.ElementTree as ET
 
 st.set_page_config(page_title="Professional Institutional Crypto Terminal", layout="wide")
 
-# ================= PROFESSIONAL UI & CUSTOM CSS STYLING =================
+# ================= PROFESSIONAL RESPONSIVE TABS CSS =================
 st.markdown("""
     <style>
-    /* Main Background & Font Styling */
     .stApp {
         background-color: #0e1117;
         color: #f0f2f6;
     }
-    
-    /* Professional Custom Styling for Tabs */
+    /* Make all 7 tabs fit perfectly and look gorgeous */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
         background-color: #161b22;
-        padding: 10px;
+        padding: 8px;
         border-radius: 12px;
         box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     }
-    
     .stTabs [data-baseweb="tab"] {
-        height: 45px;
-        white-space: pre-wrap;
+        flex: 1;
+        min-width: 120px;
+        height: 42px;
         background-color: #21262d;
         border-radius: 8px;
         color: #c9d1d9;
         font-weight: 600;
-        font-size: 14px;
-        padding: 0 16px;
+        font-size: 13px;
+        padding: 0 10px;
         transition: all 0.3s ease;
         border: 1px solid #30363d;
+        justify-content: center;
     }
-    
     .stTabs [data-baseweb="tab"]:hover {
         background-color: #30363d;
         color: #58a6ff;
         border-color: #58a6ff;
     }
-    
     .stTabs [aria-selected="true"] {
         background: linear-gradient(135deg, #1f6feb 0%, #238636 100%) !important;
         color: #ffffff !important;
         border: none !important;
         box-shadow: 0 4px 15px rgba(31, 111, 235, 0.4);
     }
-
-    /* Metric Cards Professional Styling */
     [data-testid="stMetric"] {
         background-color: #161b22;
         border: 1px solid #30363d;
@@ -62,8 +59,6 @@ st.markdown("""
         border-radius: 10px;
         box-shadow: 0 2px 5px rgba(0,0,0,0.2);
     }
-    
-    /* Buttons Styling */
     .stButton button {
         background: linear-gradient(135deg, #238636 0%, #2ea043 100%);
         color: white;
@@ -92,7 +87,6 @@ FUTURES_DATA_URL = "https://fapi.binance.com/futures/data"
 def send_scanner_telegram_alert(signal_type, coin, price, change, volume_spike, rsi_val, tp1, tp2, sl, dominance_info, pattern_name, ai_verdict):
     clean_symbol = coin.replace('/', '_')
     icon = "🚨 <b>Smart Crypto Pump Alert (LONG)</b>" if signal_type == "PUMP" else "🩸 <b>Smart Crypto Dump Alert (SHORT)</b>"
-    
     msg_html = (
         f"{icon}\n\n"
         f"🪙 <b>Coin:</b> <code>{coin}</code>\n"
@@ -130,7 +124,6 @@ def send_theory_telegram_alert(coin, plan):
     clean_symbol = coin.replace('/', '_')
     direction_val = plan.get('direction', 'LONG')
     icon = "🟢" if "LONG" in direction_val else "🔴"
-    
     summary_clean = html.escape(str(plan.get('summary', 'Setup aligned.')))
     reasons_text = ""
     for b_item in plan.get("theory_breakdown", []):
@@ -500,15 +493,15 @@ def check_1h_trend(raw_symbol, current_price, signal_type, is_futures=False):
     except Exception:
         return True
 
-# ================= PROFESSIONAL TABS NAVIGATION =================
+# ================= 7 PERFECT COMPACT TABS =================
 tab_theory, tab_scalp_gen, tab_risk_calc, tab_div, tab_heatmap, tab_news, tab_scanner = st.tabs([
-    "🏛️ Terminal & Analysis", 
-    "⚡ Scalp Generator",
-    "🧮 Risk Calculator",
-    "📊 Divergence Tracker",
-    "🔥 Heatmaps",
-    "📰 News Hub", 
-    "📡 24/7 Scanner"
+    "🏛️ Terminal", 
+    "⚡ Scalp",
+    "🧮 Risk",
+    "📊 Divergence",
+    "🔥 Heatmap",
+    "📰 News", 
+    "📡 Scanner"
 ])
 
 # ----------------- TAB 1: UNIVERSAL COIN DEEP DIVE -----------------
@@ -669,7 +662,7 @@ with tab_theory:
 # ----------------- TAB 2: INSTANT SCALP SIGNAL GENERATOR -----------------
 with tab_scalp_gen:
     st.subheader("⚡ Instant Scalp Signal Generator & Top Coins Hub")
-    st.caption("ಈ මොහොතේ ස්කැල්ප් කිරීමට හොඳම (High Momentum & Volume Spike) කොයින් ස්වයංක්‍රීයව සොයා Full Signal Card එකක් සාදා දෙයි සහ Telegram වෙත යවයි.")
+    st.caption("ഈ මොහොතේ ස්කැල්ප් කිරීමට හොඳම (High Momentum & Volume Spike) කොයින් ස්වයංක්‍රීයව සොයා Full Signal Card එකක් සාදා දෙයි සහ Telegram වෙත යවයි.")
 
     if st.button("🚀 Find Best Scalp Coins & Auto-Send Signals", use_container_width=True):
         with st.spinner("Binance වෙළඳපොළ සෝදිසි කරමින් හොඳම Scalp Coins සොයා Telegram වෙත යවමින් පවතී..."):
@@ -863,7 +856,7 @@ with tab_scanner:
         current_time = time.time()
         for item in target_list:
             raw_symbol = item['symbol']
-            is_fut = item['is_futures']
+            is_futures = item['is_futures']
             endpoint = FUTURES_BASE_URL if is_futures else SPOT_BASE_URL
             display_symbol = f"{raw_symbol[:-4]}/USDT" if not raw_symbol.startswith("1000") else f"{raw_symbol}/USDT"
             real_time_price = item['last']
@@ -892,10 +885,10 @@ with tab_scanner:
                 signal = None
                 if scan_mode in ["Both (Pump & Dump)", "Pump Only (Long)"]:
                     if is_vol_spike and live_price_change >= price_threshold and (pump_rsi_min <= current_rsi <= pump_rsi_max) and real_time_price > current_ema:
-                        if not (btc_status == "BEARISH") and check_1h_trend(raw_symbol, real_time_price, "PUMP", is_fut) and buyer_ratio >= 52.0: signal = "PUMP"
+                        if not (btc_status == "BEARISH") and check_1h_trend(raw_symbol, real_time_price, "PUMP", is_futures) and buyer_ratio >= 52.0: signal = "PUMP"
                 if not signal and scan_mode in ["Both (Pump & Dump)", "Dump Only (Short)"]:
                     if is_vol_spike and live_price_change <= -price_threshold and (dump_rsi_min <= current_rsi <= dump_rsi_max) and real_time_price < current_ema:
-                        if not (btc_status == "BULLISH") and check_1h_trend(raw_symbol, real_time_price, "DUMP", is_fut) and seller_ratio >= 52.0: signal = "DUMP"
+                        if not (btc_status == "BULLISH") and check_1h_trend(raw_symbol, real_time_price, "DUMP", is_futures) and seller_ratio >= 52.0: signal = "DUMP"
                 
                 if signal:
                     sl_val = max(0.000001, real_time_price - (atr_val * 1.5)) if signal == "PUMP" else (real_time_price + (atr_val * 1.5))
@@ -905,7 +898,7 @@ with tab_scanner:
                     fmt = ".5f" if real_time_price < 1 else ".4f"
                     
                     alerts.append({
-                        "raw_symbol": raw_symbol, "Market": "Futures" if is_fut else "Spot", "Type": "🟢 PUMP" if signal == "PUMP" else "🔴 DUMP",
+                        "raw_symbol": raw_symbol, "Market": "Futures" if is_futures else "Spot", "Type": "🟢 PUMP" if signal == "PUMP" else "🔴 DUMP",
                         "Coin": display_symbol, "Live Price ($)": format(real_time_price, fmt), "15m Change": f"{change_str}%",
                         "RSI": f"{current_rsi:.1f}", "Pattern": pattern_found, "AI Verdict": "CONFIRMED", "TP 1": format(tp1_val, fmt), "Stop Loss": format(sl_val, fmt)
                     })
