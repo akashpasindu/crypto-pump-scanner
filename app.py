@@ -52,7 +52,7 @@ def calculate_rsi(series, period=14):
 
 st.title("🚀 Smart Crypto Pump Scanner Pro")
 
-# --- ප්‍රධාන පිටුවේම ඇති Test Button එක ---
+# --- ප්‍රධාන පිටුවේ ඇති Test Button එක ---
 col1, col2 = st.columns([1, 4])
 with col1:
     if st.button("📲 Test Telegram Bot"):
@@ -62,7 +62,7 @@ with col1:
                 "66625.00", "68250.00", "64025.00", "65500.00", "63200.00"
             )
             if res.status_code == 200:
-                st.success("✅ Telegram එකට මැසේජ් එක ගියා!")
+                st.success("✅ Telegram එකට මැසේජ් එක සාර්ථකව ගියා!")
             else:
                 st.error(f"Telegram Error: {res.text}")
         except Exception as e:
@@ -78,7 +78,7 @@ volume_threshold = st.sidebar.slider("Volume Spike Multiplier", 1.2, 5.0, 1.5)
 price_threshold = st.sidebar.slider("අවම මිල වෙනස (%)", 0.5, 10.0, 1.2)
 rsi_min = st.sidebar.slider("අවම RSI අගය", 30, 60, 45)
 rsi_max = st.sidebar.slider("උපරිම RSI අගය", 65, 85, 75)
-limit_pairs = st.sidebar.number_input("පරීක්ෂා කළ යුතු Pairs ගණන", min_value=10, max_value=100, value=50)
+limit_pairs = st.sidebar.number_input("පරීක්ෂා කළ යුතු Pairs ගණන", min_value=10, max_value=150, value=50, step=10)
 
 st.sidebar.markdown("---")
 auto_refresh = st.sidebar.checkbox("ස්වයංක්‍රීයව Scan වන්න (Auto-Refresh)", value=False)
@@ -182,15 +182,17 @@ def scan_market():
             
     return pd.DataFrame(alerts)
 
+# Scan Actions
 if st.button("Manual Scan 🔍") or auto_refresh:
     with st.spinner("දත්ත විශ්ලේෂණය කරමින් පවතී..."):
         results = scan_market()
         if not results.empty:
-            st.success(f"කාසි {len(results)} ක් හමුවිය!")
+            st.success(f"කාසි {len(results)} ක් හමුවිය! (Telegram එකට විස්තර යවන ලදී)")
             st.dataframe(results, use_container_width=True)
         else:
             st.info("මේ මොහොතේ කොන්දේසි සපුරාලූ කාසි හමු නොවීය.")
 
+# Auto-refresh loop
 if auto_refresh:
     time.sleep(refresh_interval * 60)
     st.rerun()
