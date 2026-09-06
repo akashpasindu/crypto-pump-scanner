@@ -381,7 +381,7 @@ def compute_institutional_trade_setup(symbol_resolved, current_price, mtf_data, 
 
 @st.cache_resource
 def get_global_state():
-    return {"last_alert_time": {}, "last_div_time": {}}
+    return {"last_alert_time": {}, "last_div_time": {}, "last_scalp_time": {}}
 
 global_state = get_global_state()
 
@@ -598,10 +598,10 @@ with tab_theory:
 # ----------------- TAB 2: INSTANT SCALP SIGNAL GENERATOR -----------------
 with tab_scalp_gen:
     st.subheader("⚡ Instant Scalp Signal Generator & Top Coins Hub")
-    st.caption("ಈ මොහොතේ ස්කැල්ප් කිරීමට හොඳම (High Momentum & Volume Spike) කොයින් ස්වයංක්‍රීයව සොයා Full Signal Card එකක් සාදා දෙයි.")
+    st.caption("இந்த මොහොතේ ස්කැල්ප් කිරීමට හොඳම (High Momentum & Volume Spike) කොයින් ස්වයංක්‍රීයව සොයා Full Signal Card එකක් සාදා දෙයි සහ Telegram වෙත යවයි.")
 
-    if st.button("🚀 Find Best Scalp Coins & Generate Full Signals", use_container_width=True):
-        with st.spinner("Binance වෙළඳපොළ සෝදිසි කරමින් හොඳම Scalp Coins සොයමින් පවතී..."):
+    if st.button("🚀 Find Best Scalp Coins & Auto-Send Signals", use_container_width=True):
+        with st.spinner("Binance වෙළඳපොළ සෝදිසි කරමින් හොඳම Scalp Coins සොයා Telegram වෙත යවමින් පවතී..."):
             try:
                 res_spot = requests.get(f"{SPOT_BASE_URL}/ticker/24hr", timeout=8)
                 if res_spot.status_code == 200:
@@ -626,24 +626,25 @@ with tab_scalp_gen:
                                 scalp_opportunities.append({"symbol": sym, "disp": disp, "price": cur_p, "rsi": cur_rsi, "chg": chg})
                     
                     if scalp_opportunities:
-                        st.success(f"🔥 හොඳම Scalp අවස්ථා {len(scalp_opportunities)} ක් හමුවිය!")
+                        st.success(f"🔥 හොඳම Scalp අවස්ථා {len(scalp_opportunities)} ක් හමුවිය! ටෙලිග්‍රැම් වෙත යවන ලදී.")
                         for s_item in scalp_opportunities[:5]:
+                            mtf_f, is_new = fetch_universal_adaptive_data(s_item['symbol'], False)
+                            deriv_f = fetch_derivatives_intelligence(s_item['symbol'])
+                            b_p, s_p = get_orderbook_ratio(s_item['symbol'])
+                            ob_str = f"🟢 Buyers {b_p}% / 🔴 Sellers {s_p}%"
+                            
+                            scalp_plan = compute_institutional_trade_setup(s_item['symbol'], s_item['price'], mtf_f, ob_str, ALL_THEORIES[:3], is_new, deriv_f, s_item['rsi'])
+                            
+                            # Auto send to Telegram if not sent recently
+                            if time.time() - global_state["last_scalp_time"].get(s_item['disp'], 0) > 3600:
+                                send_theory_telegram_alert(s_item['disp'], scalp_plan)
+                                global_state["last_scalp_time"][s_item['disp']] = time.time()
+                            
                             with st.expander(f"📌 Scalp Setup: {s_item['disp']} | Change: {s_item['chg']:+.2f}% | RSI: {s_item['rsi']}", expanded=True):
-                                mtf_f, is_new = fetch_universal_adaptive_data(s_item['symbol'], False)
-                                deriv_f = fetch_derivatives_intelligence(s_item['symbol'])
-                                b_p, s_p = get_orderbook_ratio(s_item['symbol'])
-                                ob_str = f"🟢 Buyers {b_p}% / 🔴 Sellers {s_p}%"
-                                
-                                scalp_plan = compute_institutional_trade_setup(s_item['symbol'], s_item['price'], mtf_f, ob_str, ALL_THEORIES[:3], is_new, deriv_f, s_item['rsi'])
-                                
                                 st.write(f"**Entry Zone:** ${scalp_plan['entry_zone']} | **Stop Loss:** ${scalp_plan['stop_loss']}")
                                 st.write(f"**Targets:** TP1: ${scalp_plan['tp1']} | TP2: ${scalp_plan['tp2']} | TP3: ${scalp_plan['tp3']}")
                                 st.info(scalp_plan['summary'])
-                                
-                                if st.button(f"📲 Send {s_item['disp']} Scalp Signal to Telegram", key=s_item['symbol']):
-                                    res_t = send_theory_telegram_alert(s_item['disp'], scalp_plan)
-                                    if res_t.status_code == 200:
-                                        st.success(f"✅ {s_item['disp']} Scalp Signal එක Telegram වෙත යවන ලදී!")
+                                st.success(f"✅ Telegram වෙත යවන ලදී: {s_item['disp']}")
                     else:
                         st.warning("මෙම මොහොතේ නිශ්චිත Scalp කොන්දේසි සපුරාලූ කාසි නොමැත. නැවත උත්සාහ කරන්න.")
             except Exception as ex:
