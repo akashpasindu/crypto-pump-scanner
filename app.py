@@ -106,7 +106,7 @@ def send_scanner_telegram_alert(signal_type, coin, price, change, volume_spike, 
 
 def send_divergence_telegram_alert(div_type, coin, price, rsi_val):
     clean_symbol = coin.replace('/', '_')
-    icon = "🟢 <b>Auto Bullish Divergence Detected</b>" if div_type == "BULLISH_DIV" else "🔴 <b>Auto Bearish Divergence Detected</b>"
+    icon = "🟢 <b>Auto Bullish Divergence Detected</b>" if div_type == "🟢 BULLISH DIV (Pump)" else "🔴 <b>Auto Bearish Divergence Detected</b>"
     msg_html = (
         f"{icon}\n\n"
         f"🪙 <b>Coin:</b> <code>{coin}</code>\n"
@@ -243,8 +243,8 @@ def check_auto_divergence(closes, rsi_series):
     if len(closes) < 15: return None
     p_cur, p_prev = closes.iloc[-1], closes.iloc[-5]
     r_cur, r_prev = rsi_series.iloc[-1], rsi_series.iloc[-5]
-    if p_cur < p_prev and r_cur > r_prev and r_cur < 45: return "BULLISH_DIV"
-    elif p_cur > p_prev and r_cur < r_prev and r_cur > 55: return "BEARISH_DIV"
+    if p_cur < p_prev and r_cur > r_prev and r_cur < 45: return "🟢 BULLISH DIV (Pump)"
+    elif p_cur > p_prev and r_cur < r_prev and r_cur > 55: return "🔴 BEARISH DIV (Dump)"
     return None
 
 def fetch_fear_and_greed():
@@ -617,7 +617,7 @@ with tab_term:
 # ----------------- TAB 2: SCALP GENERATOR -----------------
 with tab_scalp:
     st.subheader("⚡ Instant Scalp Signal Generator")
-    st.caption("ഈ මොහොතේ ස්කැල්ප් කිරීමට හොඳම කොයින් ස්වයංක්‍රීයව සොයා Full Signal Card සකස් කරයි.")
+    st.caption("ಈ මොහොතේ ස්කැල්ප් කිරීමට හොඳම කොයින් ස්වයංක්‍රීයව සොයා Full Signal Card සකස් කරයි.")
     if st.button("🚀 Find Best Scalp Coins Now", use_container_width=True):
         with st.spinner("Scalp Coins සොයමින් පවතී..."):
             try:
@@ -680,28 +680,40 @@ with tab_risk:
 # ----------------- TAB 4: DIVERGENCE TRACKER -----------------
 with tab_div:
     st.subheader("📊 Live Auto-Tracking RSI Divergence Detector")
-    if st.button("🔍 Run Divergence Scan", use_container_width=True):
-        divs = []
-        try:
-            res_s = requests.get(f"{SPOT_BASE_URL}/ticker/24hr", timeout=6)
-            if res_s.status_code == 200:
-                for item in sorted(res_s.json(), key=lambda x: float(x.get('quoteVolume',0)), reverse=True)[:30]:
-                    sym = item['symbol']
-                    if sym.endswith('USDT'):
-                        k_res = requests.get(f"{SPOT_BASE_URL}/klines", params={'symbol': sym, 'interval': '15m', 'limit': 30}, timeout=2)
+    st.caption("වෙළඳපොළේ ප්‍රධාන කාසි ස්කෑන් කර Bullish හෝ Bearish Divergence සජීවීව පෙන්වයි සහ Telegram වෙත යවයි.")
+    
+    if st.button("🔍 Run Live Divergence Scan Now", use_container_width=True):
+        with st.spinner("වෙළඳපොළේ සියලුම ප්‍රධාන කාසි වල Divergences ස්කෑන් කරමින් පවතී..."):
+            divs = []
+            try:
+                res_s = requests.get(f"{SPOT_BASE_URL}/ticker/24hr", timeout=8)
+                if res_s.status_code == 200:
+                    top_coins = sorted([t for t in res_s.json() if t.get('symbol', '').endswith('USDT') and not t.get('symbol', '').endswith(('UPUSDT', 'DOWNUSDT'))], key=lambda x: float(x.get('quoteVolume', 0)), reverse=True)[:35]
+                    for item in top_coins:
+                        sym = item['symbol']
+                        disp = f"{sym[:-4]}/USDT"
+                        k_res = requests.get(f"{SPOT_BASE_URL}/klines", params={'symbol': sym, 'interval': '15m', 'limit': 30}, timeout=3)
                         if k_res.status_code == 200:
-                            df = pd.DataFrame(k_res.json())[4].astype(float)
-                            rsi_s = calculate_rsi(df, 14)
+                            candles = k_res.json()
+                            df = pd.DataFrame(candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])['close'].astype(float)
+                            rsi_s = calculate_rsi(df, period=14)
                             dtype = check_auto_divergence(df, rsi_s)
                             if dtype:
-                                divs.append({"Coin": f"{sym[:-4]}/USDT", "Type": dtype, "Price": df.iloc[-1]})
-                if divs:
-                    st.success(f"හමුවූ Divergence සංඥා: {len(divs)}")
-                    st.dataframe(pd.DataFrame(divs), use_container_width=True)
-                else:
-                    st.info("Divergence සංඥා හමු නොවීය.")
-        except Exception as e:
-            st.error(f"Error: {e}")
+                                cur_p = df.iloc[-1]
+                                cur_rsi = round(rsi_s.iloc[-1], 1)
+                                divs.append({"Coin": disp, "Type": dtype, "Price": f"${cur_p:,.4f}" if cur_p >= 1 else f"${cur_p:,.6f}", "RSI": cur_rsi})
+                                
+                                if time.time() - global_state["last_div_time"].get(disp, 0) > 7200:
+                                    send_divergence_telegram_alert(dtype, disp, f"{cur_p:,.4f}", cur_rsi)
+                                    global_state["last_div_time"][disp] = time.time()
+                    
+                    if divs:
+                        st.success(f"🔥 ප්‍රබල Divergence සංඥා {len(divs)} ක් හමුවිය!")
+                        st.dataframe(pd.DataFrame(divs), use_container_width=True, hide_index=True)
+                    else:
+                        st.info("මෙම මොහොතේ ප්‍රබල Divergence සංඥා කිසිවක් හමු නොවීය.")
+            except Exception as e:
+                st.error(f"Scanner Error: {e}")
 
 # ----------------- TAB 5: AI TRADING ASSISTANT -----------------
 with tab_ai:
