@@ -8,7 +8,77 @@ import html
 import time
 import xml.etree.ElementTree as ET
 
-st.set_page_config(page_title="Institutional Terminal & Risk Calculator", layout="wide")
+st.set_page_config(page_title="Professional Institutional Crypto Terminal", layout="wide")
+
+# ================= PROFESSIONAL UI & CUSTOM CSS STYLING =================
+st.markdown("""
+    <style>
+    /* Main Background & Font Styling */
+    .stApp {
+        background-color: #0e1117;
+        color: #f0f2f6;
+    }
+    
+    /* Professional Custom Styling for Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background-color: #161b22;
+        padding: 10px;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        height: 45px;
+        white-space: pre-wrap;
+        background-color: #21262d;
+        border-radius: 8px;
+        color: #c9d1d9;
+        font-weight: 600;
+        font-size: 14px;
+        padding: 0 16px;
+        transition: all 0.3s ease;
+        border: 1px solid #30363d;
+    }
+    
+    .stTabs [data-baseweb="tab"]:hover {
+        background-color: #30363d;
+        color: #58a6ff;
+        border-color: #58a6ff;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #1f6feb 0%, #238636 100%) !important;
+        color: #ffffff !important;
+        border: none !important;
+        box-shadow: 0 4px 15px rgba(31, 111, 235, 0.4);
+    }
+
+    /* Metric Cards Professional Styling */
+    [data-testid="stMetric"] {
+        background-color: #161b22;
+        border: 1px solid #30363d;
+        padding: 15px;
+        border-radius: 10px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+    
+    /* Buttons Styling */
+    .stButton button {
+        background: linear-gradient(135deg, #238636 0%, #2ea043 100%);
+        color: white;
+        font-weight: bold;
+        border-radius: 8px;
+        border: none;
+        padding: 10px 20px;
+        transition: all 0.3s ease;
+    }
+    .stButton button:hover {
+        background: linear-gradient(135deg, #2ea043 0%, #3fb950 100%);
+        box-shadow: 0 4px 12px rgba(35, 134, 54, 0.4);
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 # ================= CONFIGURATION =================
 TELEGRAM_BOT_TOKEN = "8277509351:AAFgtRQ6jNApDmGjaZ4ARbqAHIu7us_MACk"
@@ -430,15 +500,15 @@ def check_1h_trend(raw_symbol, current_price, signal_type, is_futures=False):
     except Exception:
         return True
 
-# ================= TABS NAVIGATION =================
+# ================= PROFESSIONAL TABS NAVIGATION =================
 tab_theory, tab_scalp_gen, tab_risk_calc, tab_div, tab_heatmap, tab_news, tab_scanner = st.tabs([
-    "🏛️ Universal Coin & Indicators", 
-    "⚡ Instant Scalp Signal Generator",
-    "🧮 Risk & Position Calculator",
-    "📊 Auto Divergence Tracker",
-    "🔥 Live Heatmaps & Sectors",
-    "📰 Fundamental News Hub", 
-    "📡 24/7 Autonomous Scanner"
+    "🏛️ Terminal & Analysis", 
+    "⚡ Scalp Generator",
+    "🧮 Risk Calculator",
+    "📊 Divergence Tracker",
+    "🔥 Heatmaps",
+    "📰 News Hub", 
+    "📡 24/7 Scanner"
 ])
 
 # ----------------- TAB 1: UNIVERSAL COIN DEEP DIVE -----------------
@@ -599,7 +669,7 @@ with tab_theory:
 # ----------------- TAB 2: INSTANT SCALP SIGNAL GENERATOR -----------------
 with tab_scalp_gen:
     st.subheader("⚡ Instant Scalp Signal Generator & Top Coins Hub")
-    st.caption("ഈ මොහොතේ ස්කැල්ප් කිරීමට හොඳම (High Momentum & Volume Spike) කොයින් ස්වයංක්‍රීයව සොයා Full Signal Card එකක් සාදා දෙයි සහ Telegram වෙත යවයි.")
+    st.caption("ಈ මොහොතේ ස්කැල්ප් කිරීමට හොඳම (High Momentum & Volume Spike) කොයින් ස්වයංක්‍රීයව සොයා Full Signal Card එකක් සාදා දෙයි සහ Telegram වෙත යවයි.")
 
     if st.button("🚀 Find Best Scalp Coins & Auto-Send Signals", use_container_width=True):
         with st.spinner("Binance වෙළඳපොළ සෝදිසි කරමින් හොඳම Scalp Coins සොයා Telegram වෙත යවමින් පවතී..."):
@@ -794,7 +864,7 @@ with tab_scanner:
         for item in target_list:
             raw_symbol = item['symbol']
             is_fut = item['is_futures']
-            endpoint = FUTURES_BASE_URL if is_fut else SPOT_BASE_URL
+            endpoint = FUTURES_BASE_URL if is_futures else SPOT_BASE_URL
             display_symbol = f"{raw_symbol[:-4]}/USDT" if not raw_symbol.startswith("1000") else f"{raw_symbol}/USDT"
             real_time_price = item['last']
             if not real_time_price or raw_symbol in ['BTCUSDT', 'USDCUSDT', 'FDUSDUSDT']: continue
