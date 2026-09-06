@@ -166,30 +166,28 @@ def get_orderbook_buyer_ratio(raw_symbol):
 
 st.title("🚀 Smart Crypto Pump Scanner Pro Max (AI Enabled)")
 
+# Global Background Alerts Tracking (Cache across sessions)
+@st.cache_resource
+def get_global_state():
+    return {"last_alert_time": {}}
+
+global_state = get_global_state()
+
+# Default Settings (Hardcoded for Autonomous 24/7 Scanning)
+volume_threshold = 1.5
+price_threshold = 1.2
+rsi_min = 45
+rsi_max = 75
+limit_pairs = 60
+
 # Sidebar Settings
-st.sidebar.header("AI & Bot Settings")
+st.sidebar.header("Bot Configuration")
 gemini_key = st.sidebar.text_input("Gemini API Key", value=DEFAULT_GEMINI_KEY, type="password")
 enable_ai = st.sidebar.checkbox("🧠 Enable AI Trade Verifier", value=True)
-
-st.sidebar.header("Technical Filters")
-enable_pattern_filter = st.sidebar.checkbox("🕯️ Candlestick Pattern Detection", value=True)
 enable_btc_filter = st.sidebar.checkbox("🛡️ BTC Market Safety Filter", value=True)
 enable_1h_filter = st.sidebar.checkbox("📈 1h Trend (50 EMA) Filter", value=True)
 enable_ob_filter = st.sidebar.checkbox("🐋 Whale Order Book Filter (>55% Buyers)", value=True)
-enable_sound = st.sidebar.checkbox("🔔 Play Sound on Alert", value=True)
 
-volume_threshold = st.sidebar.slider("Volume Spike Multiplier", 1.2, 5.0, 1.5)
-price_threshold = st.sidebar.slider("අවම මිල වෙනස (%)", 0.5, 10.0, 1.2)
-rsi_min = st.sidebar.slider("අවම RSI අගය", 30, 60, 45)
-rsi_max = st.sidebar.slider("උපරිම RSI අගය", 65, 85, 75)
-limit_pairs = st.sidebar.number_input("පරීක්ෂා කළ යුතු Pairs ගණන", min_value=10, max_value=150, value=50, step=10)
-
-st.sidebar.markdown("---")
-auto_refresh = st.sidebar.checkbox("ස්වයංක්‍රීයව Scan වන්න (Auto-Refresh)", value=False)
-refresh_interval = st.sidebar.slider("නැවත Scan වන කාලය (මිනිත්තු)", 1, 10, 2)
-
-if "last_alert_time" not in st.session_state:
-    st.session_state.last_alert_time = {}
 if "paper_trades" not in st.session_state:
     st.session_state.paper_trades = []
 
@@ -220,69 +218,34 @@ def check_1h_trend(raw_symbol, current_price):
     except Exception:
         return True
 
-def update_paper_trades(latest_prices):
-    for trade in st.session_state.paper_trades:
-        if trade["Status"] == "ACTIVE":
-            sym = trade["Raw_Symbol"]
-            if sym in latest_prices:
-                current_p = latest_prices[sym]
-                entry_p = trade["Entry ($)"]
-                tp1_p = trade["TP1 ($)"]
-                sl_p = trade["SL ($)"]
-                
-                if current_p >= tp1_p:
-                    trade["Status"] = "CLOSED (TP1 HIT 🎯)"
-                    trade["PnL ($)"] = round(((tp1_p - entry_p) / entry_p) * trade["Allocated ($)"], 2)
-                    trade["PnL (%)"] = f"+{round(((tp1_p - entry_p) / entry_p) * 100, 2)}%"
-                elif current_p <= sl_p:
-                    trade["Status"] = "CLOSED (SL HIT 🛑)"
-                    trade["PnL ($)"] = round(((sl_p - entry_p) / entry_p) * trade["Allocated ($)"], 2)
-                    trade["PnL (%)"] = f"{round(((sl_p - entry_p) / entry_p) * 100, 2)}%"
-                else:
-                    live_pnl_val = ((current_p - entry_p) / entry_p) * trade["Allocated ($)"]
-                    trade["PnL ($)"] = round(live_pnl_val, 2)
-                    prefix = "+" if live_pnl_val >= 0 else ""
-                    trade["PnL (%)"] = f"{prefix}{round(((current_p - entry_p) / entry_p) * 100, 2)}%"
-
-def scan_market():
+def scan_market_autonomous():
     btc_safe, btc_msg = check_btc_trend()
-    if enable_btc_filter:
-        if not btc_safe:
-            st.warning(f"⚠️ **Scan එක අත්හිටුවන ලදී:** {btc_msg}. වෙළඳපොළ පහත බසින බැවින් Alerts නිකුත් නොකෙරේ.")
-            return []
-        else:
-            st.info(f"🛡️ {btc_msg}")
+    if enable_btc_filter and not btc_safe:
+        return [], btc_msg
 
     alerts = []
     res = requests.get(f"{BASE_URL}/ticker/24hr", timeout=10)
     if res.status_code != 200:
-        st.error("Binance Data API වෙත සම්බන්ධ වීමට නොහැකි විය.")
-        return alerts
+        return alerts, btc_msg
         
     tickers = res.json()
     active_usdt_pairs = []
-    price_dict = {}
     
     for t in tickers:
         symbol = t.get('symbol', '')
-        last_price = float(t.get('lastPrice', 0))
-        price_dict[symbol] = last_price
-        
         if symbol.endswith('USDT') and not symbol.endswith(('UPUSDT', 'DOWNUSDT', 'BEARUSDT', 'BULLUSDT')):
             active_usdt_pairs.append({
                 'symbol': symbol,
                 'quoteVolume': float(t.get('quoteVolume', 0)),
-                'last': last_price,
+                'last': float(t.get('lastPrice', 0)),
                 'high': float(t.get('highPrice', 0)),
                 'low': float(t.get('lowPrice', 0))
             })
             
-    update_paper_trades(price_dict)
     sorted_pairs = sorted(active_usdt_pairs, key=lambda x: x['quoteVolume'], reverse=True)[:limit_pairs]
-    progress_bar = st.progress(0)
     current_time = time.time()
     
-    for i, item in enumerate(sorted_pairs):
+    for item in sorted_pairs:
         raw_symbol = item['symbol']
         display_symbol = f"{raw_symbol[:-4]}/USDT"
         real_time_price = item['last']
@@ -332,9 +295,9 @@ def scan_market():
                 if enable_ob_filter and buyer_ratio < 55.0:
                     continue
 
-                ai_verdict, ai_reason, ai_risk = ("N/A", "AI Disabled", "Medium")
+                ai_verdict = "N/A"
                 if enable_ai and gemini_key:
-                    ai_verdict, ai_reason, ai_risk = analyze_with_ai(
+                    ai_verdict, _, _ = analyze_with_ai(
                         display_symbol, real_time_price, round(live_price_change, 2),
                         f"{round(current_volume / avg_volume, 1)}x", round(current_rsi, 1),
                         pattern_found, buyer_ratio, btc_msg, gemini_key
@@ -359,8 +322,6 @@ def scan_market():
                     "raw_symbol": raw_symbol,
                     "Coin": display_symbol,
                     "AI Verdict": ai_verdict,
-                    "AI Reason": ai_reason,
-                    "Risk": ai_risk,
                     "Pattern": pattern_found,
                     "Live Price ($)": price_str,
                     "15m Change (%)": f"+{change_str}%",
@@ -371,92 +332,36 @@ def scan_market():
                     "Volume Spike": spike_str
                 })
                 
-                last_sent = st.session_state.last_alert_time.get(display_symbol, 0)
+                # Cooldown check: පැයකට එක් වරක් Telegram Alert යැවීම
+                last_sent = global_state["last_alert_time"].get(display_symbol, 0)
                 if current_time - last_sent > 3600:
                     send_telegram_alert(
                         display_symbol, price_str, change_str, spike_str, rsi_str, 
                         tp1_str, tp2_str, sl_str, high_str, low_str, buyer_ratio, pattern_found, ai_verdict
                     )
-                    st.session_state.last_alert_time[display_symbol] = current_time
-                    
-                    st.session_state.paper_trades.insert(0, {
-                        "Time": time.strftime("%H:%M:%S"),
-                        "Raw_Symbol": raw_symbol,
-                        "Coin": display_symbol,
-                        "AI Verdict": ai_verdict,
-                        "Entry ($)": real_time_price,
-                        "TP1 ($)": tp1_val,
-                        "SL ($)": sl_val,
-                        "Allocated ($)": 100.0,
-                        "PnL ($)": 0.0,
-                        "PnL (%)": "0.0%",
-                        "Status": "ACTIVE"
-                    })
+                    global_state["last_alert_time"][display_symbol] = current_time
                     
         except Exception:
             continue
-        finally:
-            progress_bar.progress((i + 1) / len(sorted_pairs))
-            time.sleep(0.02)
             
-    return alerts
+    return alerts, btc_msg
 
-# Dashboard Layout
-tab1, tab2 = st.tabs(["📡 Live Scanner & AI Insights", "📊 Live Paper Trading & Win-Rate"])
+# ================= 24/7 AUTONOMOUS EXECUTION =================
+# Cron-Job හෝ ඕනෑම Ping එකකින් පිටුව load වන සැණින් ස්වයංක්‍රීයව scan වේ
+with st.spinner("24/7 ස්කෑනරය ක්‍රියාත්මකයි... දත්ත පරීක්ෂා කෙරේ"):
+    results, btc_info = scan_market_autonomous()
 
-with tab1:
-    if st.button("Manual Scan 🔍") or auto_refresh:
-        with st.spinner("දත්ත, Whale Flow, 1h Trend සහ AI Trade Analysis සිදු කරමින් පවතී..."):
-            results = scan_market()
-            if results:
-                st.success(f"කාසි {len(results)} ක් හමුවිය!")
-                if enable_sound:
-                    play_alert_sound()
+st.caption(f"🛡️ Market Status: {btc_info} | Scanner Status: Active 24/7 Cloud")
 
-                df_display = pd.DataFrame(results).drop(columns=['raw_symbol'])
-                st.dataframe(df_display, use_container_width=True)
-                
-                st.markdown("### 📊 Live Charts & AI Recommendations")
-                for coin_data in results:
-                    col_a, col_b = st.columns([3, 1])
-                    with col_a:
-                        st.write(f"**{coin_data['Coin']} — Pattern: `{coin_data['Pattern']}`**")
-                        render_tradingview_widget(coin_data['raw_symbol'])
-                    with col_b:
-                        st.markdown("#### 🤖 AI Advice")
-                        st.info(f"**Verdict:** {coin_data['AI Verdict']}")
-                        st.write(f"**Reason:** {coin_data['AI Reason']}")
-                        st.write(f"**Risk Level:** `{coin_data['Risk']}`")
-            elif results is not None and len(results) == 0:
-                st.info("මේ මොහොතේ කොන්දේසි සපුරාලූ කාසි හමු නොවීය.")
-
-with tab2:
-    st.subheader("📈 Paper Trading Performance Dashboard")
-    trades = st.session_state.paper_trades
-    if trades:
-        total_trades = len(trades)
-        wins = sum(1 for t in trades if "TP1 HIT" in t["Status"])
-        losses = sum(1 for t in trades if "SL HIT" in t["Status"])
-        closed_trades = wins + losses
-        win_rate = (wins / closed_trades * 100) if closed_trades > 0 else 0.0
-        total_pnl = sum(t["PnL ($)"] for t in trades)
-        
-        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-        m_col1.metric("Total Trades", total_trades)
-        m_col2.metric("Win Rate", f"{win_rate:.1f}%", f"{wins}W - {losses}L")
-        m_col3.metric("Total PnL ($)", f"${total_pnl:.2f}", delta=f"{total_pnl:.2f}")
-        m_col4.metric("Active Trades", total_trades - closed_trades)
-        
-        st.write("---")
-        display_paper = pd.DataFrame(trades).drop(columns=['Raw_Symbol'])
-        st.dataframe(display_paper, use_container_width=True)
-        
-        if st.button("Clear Trade History"):
-            st.session_state.paper_trades = []
-            st.rerun()
-    else:
-        st.info("තවමත් Alerts කිසිවක් සටහන් වී නොමැත. Alert එකක් ආ සැණින් මෙහි සටහන් වේ.")
-
-if auto_refresh:
-    time.sleep(refresh_interval * 60)
-    st.rerun()
+if results:
+    st.success(f"🔥 කාසි {len(results)} ක් හමුවිය! (Telegram එකට Alerts යවන ලදී)")
+    play_alert_sound()
+    df_display = pd.DataFrame(results).drop(columns=['raw_symbol'])
+    st.dataframe(df_display, use_container_width=True)
+    
+    st.markdown("### 📊 Live Charts")
+    for coin_data in results:
+        st.write(f"**{coin_data['Coin']} — Pattern: `{coin_data['Pattern']}`**")
+        render_tradingview_widget(coin_data['raw_symbol'])
+else:
+    st.info("මේ මොහොතේ කොන්දේසි සපුරාලූ කාසි නොමැත. Cron-Job මඟින් පසුබිමෙන් පරීක්ෂා කරමින් පවතී.")
