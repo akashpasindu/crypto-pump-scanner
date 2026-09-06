@@ -47,7 +47,7 @@ def send_theory_telegram_alert(coin, plan):
         f"🛑 *Stop Loss:* `${plan.get('stop_loss', 'N/A')}`\n\n"
         f"🎯 *Targets:*\n"
         f"  ├ TP 1: `${plan.get('tp1', 'N/A')}`\n"
-        f"  ├ TP 2: `${plan.get('tp2', 'N/A')}`\n"
+        f"  └ TP 2: `${plan.get('tp2', 'N/A')}`\n"
         f"  └ TP 3: `${plan.get('tp3', 'N/A')}`\n\n"
         f"🧠 *Theories:* `{theories_used}`\n"
         f"📝 *Thesis:* _{plan.get('summary', 'Setup aligned.')}_\n\n"
@@ -133,6 +133,31 @@ def detect_candlestick_pattern(df):
         return "Three Black Crows 🩸"
     return "Volume Breakout ⚡"
 
+# Universal Gemini Call Helper (Supports both query parameter and x-goog-api-key headers)
+def call_gemini_api(prompt, api_key):
+    key_clean = api_key.strip()
+    headers = {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': key_clean
+    }
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    
+    # Try v1beta first with header
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+    try:
+        res = requests.post(url, headers=headers, json=payload, timeout=12)
+        if res.status_code == 200:
+            return res.json()
+        
+        # Fallback to query parameter format
+        url_fallback = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key_clean}"
+        res_fb = requests.post(url_fallback, headers={'Content-Type': 'application/json'}, json=payload, timeout=12)
+        if res_fb.status_code == 200:
+            return res_fb.json()
+        return {"error_status": res_fb.status_code, "text": res_fb.text}
+    except Exception as e:
+        return {"exception": str(e)}
+
 def analyze_scanner_ai(signal_type, coin, price, change, volume_spike, rsi, pattern, dom_info, btc_status, api_key):
     if not api_key:
         return "N/A"
@@ -143,17 +168,16 @@ def analyze_scanner_ai(signal_type, coin, price, change, volume_spike, rsi, patt
         f"Pattern: {pattern}, Order Book: {dom_info}, Market: {btc_status}. "
         'Respond in JSON: {"verdict": "STRONG BUY" or "SCALP ONLY" or "AVOID", "confidence": 85}'
     )
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-    try:
-        res = requests.post(url, headers={'Content-Type': 'application/json'}, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=6)
-        if res.status_code == 200:
-            match = re.search(r'\{.*\}', res.json()['candidates'][0]['content']['parts'][0]['text'], re.DOTALL)
+    res_data = call_gemini_api(prompt, api_key)
+    if "candidates" in res_data:
+        try:
+            match = re.search(r'\{.*\}', res_data['candidates'][0]['content']['parts'][0]['text'], re.DOTALL)
             if match:
                 data = json.loads(match.group(0))
                 return f"{data.get('verdict')} ({data.get('confidence')}%)"
-        return "Analyzed"
-    except Exception:
-        return "AI Error"
+        except Exception:
+            pass
+    return "Analyzed"
 
 def run_universal_theory_analysis(coin, price, ohlcv_text, rsi, ema20, ema50, atr, dom_info, selected_theories, timeframe, api_key):
     if not api_key:
@@ -170,9 +194,9 @@ def run_universal_theory_analysis(coin, price, ohlcv_text, rsi, ema20, ema50, at
     - Recent Candles (OHLCV):
     {ohlcv_text}
 
-    RESPOND ONLY IN STRICT JSON (No markdown):
+    RESPOND ONLY IN STRICT JSON (No markdown ticks, no extra text):
     {{
-      "direction": "STRONG LONG" or "STRONG SHORT" or "WAIT / NEUTRAL",
+      "direction": "STRONG LONG",
       "confidence": 85,
       "risk_reward": "1:3.2",
       "leverage": "3x - 5x (Max 10x with strict SL)",
@@ -188,16 +212,19 @@ def run_universal_theory_analysis(coin, price, ohlcv_text, rsi, ema20, ema50, at
       "summary": "2-sentence institutional trade thesis."
     }}
     """
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-    try:
-        res = requests.post(url, headers={'Content-Type': 'application/json'}, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=12)
-        if res.status_code == 200:
-            match = re.search(r'\{.*\}', res.json()['candidates'][0]['content']['parts'][0]['text'], re.DOTALL)
+    res_data = call_gemini_api(prompt, api_key)
+    if "candidates" in res_data:
+        try:
+            match = re.search(r'\{.*\}', res_data['candidates'][0]['content']['parts'][0]['text'], re.DOTALL)
             if match:
                 return json.loads(match.group(0))
-        return {"error": f"API Status: {res.status_code}"}
-    except Exception as e:
-        return {"error": f"Execution error: {e}"}
+        except Exception as e:
+            return {"error": f"Parse error: {e}"}
+    elif "error_status" in res_data:
+        return {"error": f"Google API Error {res_data['error_status']}: {res_data.get('text', '')}"}
+    elif "exception" in res_data:
+        return {"error": f"Network error: {res_data['exception']}"}
+    return {"error": "Unknown API Response"}
 
 @st.cache_resource
 def get_global_state():
