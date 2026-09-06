@@ -31,7 +31,7 @@ def send_telegram_alert(coin, price, change, volume_spike, rsi_val, tp1, tp2, sl
         f"📊 *24h Range:* `${low_24h}` - `${high_24h}`\n\n"
         f"🔗 [Trade on Binance](https://www.binance.com/en/trade/{clean_symbol})"
     )
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    url = f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": message,
@@ -45,22 +45,21 @@ def analyze_with_ai(coin, price, change, volume_spike, rsi, pattern, buyer_ratio
     if not api_key:
         return "⚠️ No API Key", "API Key ලබා දී නොමැත", "Medium"
     
-    prompt = f"""
-    Act as a professional Crypto Day Trader. Analyze this 15-minute pump setup and decide if it's safe to enter:
-    - Coin: {coin}
-    - Live Price: ${price}
-    - 15m Price Surge: +{change}%
-    - Volume Multiplier: {volume_spike}
-    - RSI (14): {rsi}
-    - Candlestick Pattern: {pattern}
-    - Order Book Buyer Dominance: {buyer_ratio}%
-    - Overall Market (BTC) Status: {btc_status}
-
-    Respond ONLY in strict JSON format like this (no markdown ticks, no extra text):
-    {{"verdict": "STRONG BUY", "confidence": 85, "reason": "brief 1 sentence reason", "risk": "Low"}}
-    """
+    prompt = (
+        "Act as a professional Crypto Day Trader. Analyze this 15-minute pump setup and decide if it's safe to enter:\n"
+        f"- Coin: {coin}\n"
+        f"- Live Price: ${price}\n"
+        f"- 15m Price Surge: +{change}%\n"
+        f"- Volume Multiplier: {volume_spike}\n"
+        f"- RSI (14): {rsi}\n"
+        f"- Candlestick Pattern: {pattern}\n"
+        f"- Order Book Buyer Dominance: {buyer_ratio}%\n"
+        f"- Overall Market (BTC) Status: {btc_status}\n\n"
+        'Respond ONLY in strict JSON format like this (no codeblocks, no markdown): '
+        '{"verdict": "STRONG BUY", "confidence": 85, "reason": "brief 1 sentence reason", "risk": "Low"}'
+    )
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    url = f"[https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=](https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=){api_key}"
     headers = {'Content-Type': 'application/json'}
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     
@@ -68,4 +67,5 @@ def analyze_with_ai(coin, price, change, volume_spike, rsi, pattern, buyer_ratio
         res = requests.post(url, headers=headers, json=payload, timeout=6)
         if res.status_code == 200:
             raw_text = res.json()['candidates'][0]['content']['parts'][0]['text'].strip()
-            clean_json = raw_text.replace('```json', '').replace('
+            # Clean possible markdown block wrappers safely
+            clean_json = raw_text.replace("
