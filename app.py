@@ -10,6 +10,11 @@ import xml.etree.ElementTree as ET
 
 st.set_page_config(page_title="Professional Ultimate Institutional Crypto Terminal", layout="wide")
 
+# ================= CONFIGURATION =================
+TELEGRAM_BOT_TOKEN = "8277509351:AAFgtRQ6jNApDmGjaZ4ARbqAHIu7us_MACk"
+TELEGRAM_CHAT_ID = "7929509451"
+DEFAULT_GEMINI_KEY = ""
+
 # ================= PROFESSIONAL RESPONSIVE TABS & UI CSS =================
 st.markdown("""
     <style>
@@ -28,14 +33,14 @@ st.markdown("""
     }
     .stTabs [data-baseweb="tab"] {
         flex: 1;
-        min-width: 100px;
+        min-width: 90px;
         height: 42px;
         background-color: #21262d;
         border-radius: 8px;
         color: #c9d1d9;
         font-weight: 600;
         font-size: 12px;
-        padding: 0 8px;
+        padding: 0 6px;
         transition: all 0.3s ease;
         border: 1px solid #30363d;
         justify-content: center;
@@ -73,10 +78,6 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
-
-# ================= CONFIGURATION =================
-TELEGRAM_BOT_TOKEN = "8277509351:AAFgtRQ6jNApDmGjaZ4ARbqAHIu7us_MACk"
-TELEGRAM_CHAT_ID = "7929509451"
 
 SPOT_BASE_URL = "https://data-api.binance.vision/api/v3"
 FUTURES_BASE_URL = "https://fapi.binance.com/fapi/v1"
@@ -616,7 +617,7 @@ with tab_term:
 # ----------------- TAB 2: SCALP GENERATOR -----------------
 with tab_scalp:
     st.subheader("⚡ Instant Scalp Signal Generator")
-    st.caption("ಈ මොහොතේ ස්කැල්ප් කිරීමට හොඳම කොයින් ස්වයංක්‍රීයව සොයා Full Signal Card සකස් කරයි.")
+    st.caption("ഈ මොහොතේ ස්කැල්ප් කිරීමට හොඳම කොයින් ස්වයංක්‍රීයව සොයා Full Signal Card සකස් කරයි.")
     if st.button("🚀 Find Best Scalp Coins Now", use_container_width=True):
         with st.spinner("Scalp Coins සොයමින් පවතී..."):
             try:
