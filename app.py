@@ -2,20 +2,24 @@ import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
 import requests
+import json
 import time
 
-st.set_page_config(page_title="Crypto Pump Scanner Pro Max", layout="wide")
+st.set_page_config(page_title="Crypto Pump Scanner Pro Max (AI Powered)", layout="wide")
 
-# ================= TELEGRAM CONFIG =================
+# ================= CONFIGURATION =================
 TELEGRAM_BOT_TOKEN = "8277509351:AAFgtRQ6jNApDmGjaZ4ARbqAHIu7us_MACk"
 TELEGRAM_CHAT_ID = "7929509451"
+# ඔබේ Gemini API Key එක මෙතැනට දමන්න (නැතහොත් Sidebar එකෙන් ලබා දෙන්න)
+DEFAULT_GEMINI_KEY = "" 
 
-def send_telegram_alert(coin, price, change, volume_spike, rsi_val, tp1, tp2, sl, high_24h, low_24h, buyer_ratio, pattern_name):
+def send_telegram_alert(coin, price, change, volume_spike, rsi_val, tp1, tp2, sl, high_24h, low_24h, buyer_ratio, pattern_name, ai_verdict):
     clean_symbol = coin.replace('/', '_')
     message = (
-        f"🚨 *Smart Crypto Pump Alert!*\n\n"
+        f"🚨 *Smart Crypto Pump Alert (AI Analyzed)!*\n\n"
         f"🪙 *Coin:* `{coin}`\n"
-        f"🕯️ *Pattern:* `🔥 {pattern_name}`\n"
+        f"🤖 *AI Verdict:* `{ai_verdict}`\n"
+        f"🕯️ *Pattern:* `{pattern_name}`\n"
         f"💵 *Entry Price:* `${price}`\n"
         f"📈 *15m Change:* `+{change}%`\n"
         f"📊 *Volume Spike:* `{volume_spike}`\n"
@@ -36,7 +40,42 @@ def send_telegram_alert(coin, price, change, volume_spike, rsi_val, tp1, tp2, sl
         "disable_web_page_preview": True
     }
     return requests.post(url, json=payload, timeout=5)
-# ===================================================
+
+# ================= AI ANALYZER ENGINE =================
+def analyze_with_ai(coin, price, change, volume_spike, rsi, pattern, buyer_ratio, btc_status, api_key):
+    if not api_key:
+        return "⚠️ No API Key", "API Key ලබා දී නොමැත", "Medium"
+    
+    prompt = f"""
+    Act as a professional Crypto Day Trader. Analyze this 15-minute pump setup and decide if it's safe to enter:
+    - Coin: {coin}
+    - Live Price: ${price}
+    - 15m Price Surge: +{change}%
+    - Volume Multiplier: {volume_spike}
+    - RSI (14): {rsi}
+    - Candlestick Pattern: {pattern}
+    - Order Book Buyer Dominance: {buyer_ratio}%
+    - Overall Market (BTC) Status: {btc_status}
+
+    Respond ONLY in strict JSON format like this (no markdown ticks, no extra words):
+    {{"verdict": "STRONG BUY" or "SCALP ONLY" or "AVOID", "confidence": 85, "reason": "brief 1 sentence reason", "risk": "Low" or "Medium" or "High"}}
+    """
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    headers = {'Content-Type': 'application/json'}
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    
+    try:
+        res = requests.post(url, headers=headers, json=payload, timeout=6)
+        if res.status_code == 200:
+            raw_text = res.json()['candidates'][0]['content']['parts'][0]['text'].strip()
+            clean_json = raw_text.replace('```json', '').replace('```', '').strip()
+            data = json.loads(clean_json)
+            verdict = f"{data.get('verdict')} ({data.get('confidence')}%)"
+            return verdict, data.get('reason'), data.get('risk')
+        return "⚠️ Analysis Failed", "AI Service Error", "Medium"
+    except Exception:
+        return "⚠️ Analysis Error", "Timeout or Parse Error", "Medium"
 
 def play_alert_sound():
     sound_code = """
@@ -74,35 +113,24 @@ def render_tradingview_widget(symbol_raw):
     """
     components.html(widget_code, height=420)
 
-# --- Candlestick Pattern Detection Engine ---
 def detect_candlestick_pattern(df):
     if len(df) < 5:
         return "Normal Breakout"
-        
     c1, o1, h1, l1 = df['close'].iloc[-1], df['open'].iloc[-1], df['high'].iloc[-1], df['low'].iloc[-1]
-    c2, o2, h2, l2 = df['close'].iloc[-2], df['open'].iloc[-2], df['high'].iloc[-2], df['low'].iloc[-2]
-    c3, o3, h3, l3 = df['close'].iloc[-3], df['open'].iloc[-3], df['high'].iloc[-3], df['low'].iloc[-3]
-    
+    c2, o2 = df['close'].iloc[-2], df['open'].iloc[-2]
+    c3, o3 = df['close'].iloc[-3], df['open'].iloc[-3]
     body1 = abs(c1 - o1)
     lower_wick1 = min(c1, o1) - l1
     upper_wick1 = h1 - max(c1, o1)
     
-    # 1. Bullish Engulfing
     if (c2 < o2) and (c1 > o1) and (c1 >= o2) and (o1 <= c2):
         return "Bullish Engulfing 🟢"
-        
-    # 2. Hammer / Bullish Pinbar (Lower wick එක body එක මෙන් 2 ගුණයකට වඩා විශාල වීම)
     if (lower_wick1 >= 2 * body1) and (upper_wick1 <= body1 * 0.5) and (c1 >= o1):
         return "Bullish Hammer 🔨"
-        
-    # 3. Three White Soldiers (අඛණ්ඩව කොළ කෙන්ඩල් 3ක් ඉහළට)
     if (c1 > o1) and (c2 > o2) and (c3 > o3) and (c1 > c2 > c3):
         return "Three White Soldiers 🚀"
-        
-    # 4. Morning Star Reversal
     if (c3 < o3) and (abs(c2 - o2) < abs(c3 - o3) * 0.4) and (c1 > o1) and (c1 > (o3 + c3) / 2):
         return "Morning Star 🌟"
-        
     return "Volume Breakout ⚡"
 
 def calculate_rsi(series, period=14):
@@ -132,35 +160,19 @@ def get_orderbook_buyer_ratio(raw_symbol):
         bids = sum([float(b[1]) for b in data.get('bids', [])])
         asks = sum([float(a[1]) for a in data.get('asks', [])])
         total = bids + asks
-        if total == 0:
-            return 50.0
-        return round((bids / total) * 100, 1)
+        return round((bids / total) * 100, 1) if total > 0 else 50.0
     except Exception:
         return 50.0
 
-st.title("🚀 Smart Crypto Pump Scanner Pro Max")
-
-col1, col2 = st.columns([1, 4])
-with col1:
-    if st.button("📲 Test Telegram Bot"):
-        try:
-            res = send_telegram_alert(
-                "BTC/USDT", "65000.00", "2.50", "2.2x", "58.4", 
-                "66500.00", "67800.00", "64100.00", "65500.00", "63200.00", 68.5, "Bullish Engulfing 🟢"
-            )
-            if res.status_code == 200:
-                st.success("✅ Telegram එකට මැසේජ් එක සාර්ථකව ගියා!")
-                play_alert_sound()
-            else:
-                st.error(f"Telegram Error: {res.text}")
-        except Exception as e:
-            st.error(f"Error: {e}")
-
-st.write("---")
+st.title("🚀 Smart Crypto Pump Scanner Pro Max (AI Enabled)")
 
 # Sidebar Settings
-st.sidebar.header("Scanner Settings")
-enable_pattern_filter = st.sidebar.checkbox("🕯️ Candlestick Pattern Recognition", value=True)
+st.sidebar.header("AI & Bot Settings")
+gemini_key = st.sidebar.text_input("Gemini API Key (AI Analysis)", value=DEFAULT_GEMINI_KEY, type="password")
+enable_ai = st.sidebar.checkbox("🧠 Enable AI Trade Verifier", value=True)
+
+st.sidebar.header("Technical Filters")
+enable_pattern_filter = st.sidebar.checkbox("🕯️ Candlestick Pattern Detection", value=True)
 enable_btc_filter = st.sidebar.checkbox("🛡️ BTC Market Safety Filter", value=True)
 enable_1h_filter = st.sidebar.checkbox("📈 1h Trend (50 EMA) Filter", value=True)
 enable_ob_filter = st.sidebar.checkbox("🐋 Whale Order Book Filter (>55% Buyers)", value=True)
@@ -266,7 +278,6 @@ def scan_market():
             })
             
     update_paper_trades(price_dict)
-            
     sorted_pairs = sorted(active_usdt_pairs, key=lambda x: x['quoteVolume'], reverse=True)[:limit_pairs]
     progress_bar = st.progress(0)
     current_time = time.time()
@@ -321,6 +332,15 @@ def scan_market():
                 if enable_ob_filter and buyer_ratio < 55.0:
                     continue
 
+                # AI Analysis Call
+                ai_verdict, ai_reason, ai_risk = ("N/A", "AI Disabled", "Medium")
+                if enable_ai and gemini_key:
+                    ai_verdict, ai_reason, ai_risk = analyze_with_ai(
+                        display_symbol, real_time_price, round(live_price_change, 2),
+                        f"{round(current_volume / avg_volume, 1)}x", round(current_rsi, 1),
+                        pattern_found, buyer_ratio, btc_msg, gemini_key
+                    )
+
                 sl_val = max(0.000001, real_time_price - (atr_val * 1.5))
                 tp1_val = real_time_price + (atr_val * 2.5)
                 tp2_val = real_time_price + (atr_val * 4.0)
@@ -339,13 +359,15 @@ def scan_market():
                 alerts.append({
                     "raw_symbol": raw_symbol,
                     "Coin": display_symbol,
+                    "AI Verdict": ai_verdict,
+                    "AI Reason": ai_reason,
+                    "Risk": ai_risk,
                     "Pattern": pattern_found,
                     "Live Price ($)": price_str,
                     "15m Change (%)": f"+{change_str}%",
                     "RSI (14)": rsi_str,
                     "Buyers (%)": f"{buyer_ratio}%",
                     "Target 1 (ATR)": tp1_str,
-                    "Target 2 (ATR)": tp2_str,
                     "Stop Loss (ATR)": sl_str,
                     "Volume Spike": spike_str
                 })
@@ -354,7 +376,7 @@ def scan_market():
                 if current_time - last_sent > 3600:
                     send_telegram_alert(
                         display_symbol, price_str, change_str, spike_str, rsi_str, 
-                        tp1_str, tp2_str, sl_str, high_str, low_str, buyer_ratio, pattern_found
+                        tp1_str, tp2_str, sl_str, high_str, low_str, buyer_ratio, pattern_found, ai_verdict
                     )
                     st.session_state.last_alert_time[display_symbol] = current_time
                     
@@ -362,7 +384,7 @@ def scan_market():
                         "Time": time.strftime("%H:%M:%S"),
                         "Raw_Symbol": raw_symbol,
                         "Coin": display_symbol,
-                        "Pattern": pattern_found,
+                        "AI Verdict": ai_verdict,
                         "Entry ($)": real_time_price,
                         "TP1 ($)": tp1_val,
                         "SL ($)": sl_val,
@@ -381,11 +403,11 @@ def scan_market():
     return alerts
 
 # Dashboard Layout
-tab1, tab2 = st.tabs(["📡 Live Scanner", "📊 Live Paper Trading & Win-Rate"])
+tab1, tab2 = st.tabs(["📡 Live Scanner & AI Insights", "📊 Live Paper Trading & Win-Rate"])
 
 with tab1:
     if st.button("Manual Scan 🔍") or auto_refresh:
-        with st.spinner("දත්ත, Whale Flow, 1h Trend සහ Candlestick Patterns විශ්ලේෂණය කරමින් පවතී..."):
+        with st.spinner("දත්ත, Whale Flow, 1h Trend සහ AI Trade Analysis සිදු කරමින් පවතී..."):
             results = scan_market()
             if results:
                 st.success(f"කාසි {len(results)} ක් හමුවිය!")
@@ -395,17 +417,23 @@ with tab1:
                 df_display = pd.DataFrame(results).drop(columns=['raw_symbol'])
                 st.dataframe(df_display, use_container_width=True)
                 
-                st.markdown("### 📊 Live TradingView Charts")
+                st.markdown("### 📊 Live Charts & AI Recommendations")
                 for coin_data in results:
-                    st.write(f"**{coin_data['Coin']} — Pattern: `{coin_data['Pattern']}` (15m Timeframe)**")
-                    render_tradingview_widget(coin_data['raw_symbol'])
+                    col_a, col_b = st.columns([3, 1])
+                    with col_a:
+                        st.write(f"**{coin_data['Coin']} — Pattern: `{coin_data['Pattern']}`**")
+                        render_tradingview_widget(coin_data['raw_symbol'])
+                    with col_b:
+                        st.markdown("#### 🤖 AI Advice")
+                        st.info(f"**Verdict:** {coin_data['AI Verdict']}")
+                        st.write(f"**Reason:** {coin_data['AI Reason']}")
+                        st.write(f"**Risk Level:** `{coin_data['Risk']}`")
             elif results is not None and len(results) == 0:
                 st.info("මේ මොහොතේ කොන්දේසි සපුරාලූ කාසි හමු නොවීය.")
 
 with tab2:
     st.subheader("📈 Paper Trading Performance Dashboard")
     trades = st.session_state.paper_trades
-    
     if trades:
         total_trades = len(trades)
         wins = sum(1 for t in trades if "TP1 HIT" in t["Status"])
@@ -428,7 +456,7 @@ with tab2:
             st.session_state.paper_trades = []
             st.rerun()
     else:
-        st.info("තවමත් Alerts කිසිවක් සටහන් වී නොමැත. Alert එකක් පැමිණි විගස $100 ක අතථ්‍ය Trade එකක් මෙහි ස්වයංක්‍රීයව විවෘත වේ.")
+        st.info("තවමත් Alerts කිසිවක් සටහන් වී නොමැත. Alert එකක් ආ සැණින් මෙහි සටහන් වේ.")
 
 if auto_refresh:
     time.sleep(refresh_interval * 60)
