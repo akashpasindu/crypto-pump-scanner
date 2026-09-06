@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import requests
 import time
@@ -34,6 +35,37 @@ def send_telegram_alert(coin, price, change, volume_spike, rsi_val, tp1, tp2, sl
     }
     return requests.post(url, json=payload, timeout=5)
 # ===================================================
+
+def render_tradingview_widget(symbol_raw):
+    # Binance Pair එක TradingView widget එකට සරිලන සේ හැඩගැස්වීම (උදා: BINANCE:BTCUSDT)
+    widget_code = f"""
+    <!-- TradingView Widget BEGIN -->
+    <div class="tradingview-widget-container">
+      <div id="tradingview_{symbol_raw}"></div>
+      <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+      <script type="text/javascript">
+      new TradingView.widget(
+      {{
+        "width": "100%",
+        "height": 400,
+        "symbol": "BINANCE:{symbol_raw}",
+        "interval": "15",
+        "timezone": "Etc/UTC",
+        "theme": "dark",
+        "style": "1",
+        "locale": "en",
+        "toolbar_bg": "#f1f3f6",
+        "enable_publishing": false,
+        "hide_top_toolbar": false,
+        "save_image": false,
+        "container_id": "tradingview_{symbol_raw}"
+      }}
+      );
+      </script>
+    </div>
+    <!-- TradingView Widget END -->
+    """
+    components.html(widget_code, height=420)
 
 def calculate_rsi(series, period=14):
     delta = series.diff()
@@ -81,21 +113,18 @@ refresh_interval = st.sidebar.slider("නැවත Scan වන කාලය (ම
 if "sent_alerts" not in st.session_state:
     st.session_state.sent_alerts = set()
 
-# Cloud/US IP Block නොවී කෙලින්ම Data ලබාගැනීම
 BASE_URL = "https://data-api.binance.vision/api/v3"
 
 def scan_market():
     alerts = []
     
-    # 1. Spot 24hr Tickers ලබාගැනීම
     res = requests.get(f"{BASE_URL}/ticker/24hr", timeout=10)
     if res.status_code != 200:
         st.error("Binance Data API වෙත සම්බන්ධ වීමට නොහැකි විය.")
-        return pd.DataFrame()
+        return alerts
         
     tickers = res.json()
     
-    # USDT Spot පමණක් වෙන්කර ගැනීම
     active_usdt_pairs = []
     for t in tickers:
         symbol = t.get('symbol', '')
@@ -121,7 +150,6 @@ def scan_market():
             continue
             
         try:
-            # 15m Klines කෙලින්ම Data API වෙතින් ගැනීම
             kline_res = requests.get(
                 f"{BASE_URL}/klines", 
                 params={'symbol': raw_symbol, 'interval': '15m', 'limit': 40}, 
@@ -132,7 +160,6 @@ def scan_market():
                 continue
                 
             ohlcv = kline_res.json()
-            # Binance klines format: [open_time, open, high, low, close, volume, ...]
             df = pd.DataFrame(ohlcv, columns=[
                 'timestamp', 'open', 'high', 'low', 'close', 'volume', 
                 'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'
@@ -177,6 +204,7 @@ def scan_market():
                 rsi_str = f"{current_rsi:.1f}"
                 
                 alerts.append({
+                    "raw_symbol": raw_symbol,
                     "Coin": display_symbol,
                     "Live Price ($)": price_str,
                     "15m Change (%)": f"+{change_str}%",
@@ -199,14 +227,21 @@ def scan_market():
             progress_bar.progress((i + 1) / len(sorted_pairs))
             time.sleep(0.02)
             
-    return pd.DataFrame(alerts)
+    return alerts
 
 if st.button("Manual Scan 🔍") or auto_refresh:
     with st.spinner("දත්ත විශ්ලේෂණය කරමින් පවතී..."):
         results = scan_market()
-        if not results.empty:
-            st.success(f"කාසි {len(results)} ක් හමුවිය! (Telegram එකට විස්තර යවන ලදී)")
-            st.dataframe(results, use_container_width=True)
+        if results:
+            st.success(f"කාසි {len(results)} ක් හමුවිය!")
+            df_display = pd.DataFrame(results).drop(columns=['raw_symbol'])
+            st.dataframe(df_display, use_container_width=True)
+            
+            # හමුවූ සෑම කාසියක් සඳහාම TradingView Live Chart එකක් පෙන්වීම
+            st.markdown("### 📊 Live TradingView Charts")
+            for coin_data in results:
+                st.write(f"**{coin_data['Coin']} (15m Timeframe)**")
+                render_tradingview_widget(coin_data['raw_symbol'])
         else:
             st.info("මේ මොහොතේ කොන්දේසි සපුරාලූ කාසි හමු නොවීය.")
 
