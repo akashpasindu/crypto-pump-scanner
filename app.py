@@ -36,6 +36,14 @@ def send_telegram_alert(coin, price, change, volume_spike, rsi_val, tp1, tp2, sl
     return requests.post(url, json=payload, timeout=5)
 # ===================================================
 
+def play_alert_sound():
+    sound_code = """
+    <audio autoplay>
+      <source src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" type="audio/ogg">
+    </audio>
+    """
+    components.html(sound_code, height=0, width=0)
+
 def render_tradingview_widget(symbol_raw):
     widget_code = f"""
     <div class="tradingview-widget-container">
@@ -88,6 +96,7 @@ with col1:
             )
             if res.status_code == 200:
                 st.success("✅ Telegram එකට මැසේජ් එක සාර්ථකව ගියා!")
+                play_alert_sound()
             else:
                 st.error(f"Telegram Error: {res.text}")
         except Exception as e:
@@ -98,6 +107,9 @@ st.write("---")
 # Sidebar Settings
 st.sidebar.header("Scanner Settings")
 enable_btc_filter = st.sidebar.checkbox("🛡️ BTC Market Safety Filter", value=True)
+enable_1h_filter = st.sidebar.checkbox("📈 1h Trend (50 EMA) Filter", value=True)
+enable_sound = st.sidebar.checkbox("🔔 Play Sound on Alert", value=True)
+
 volume_threshold = st.sidebar.slider("Volume Spike Multiplier", 1.2, 5.0, 1.5)
 price_threshold = st.sidebar.slider("අවම මිල වෙනස (%)", 0.5, 10.0, 1.2)
 rsi_min = st.sidebar.slider("අවම RSI අගය", 30, 60, 45)
@@ -108,8 +120,9 @@ st.sidebar.markdown("---")
 auto_refresh = st.sidebar.checkbox("ස්වයංක්‍රීයව Scan වන්න (Auto-Refresh)", value=False)
 refresh_interval = st.sidebar.slider("නැවත Scan වන කාලය (මිනිත්තු)", 1, 10, 2)
 
-if "sent_alerts" not in st.session_state:
-    st.session_state.sent_alerts = set()
+# Alert Cooldown Tracking (පැයකට එක් වරක් පමණක් alert යැවීම)
+if "last_alert_time" not in st.session_state:
+    st.session_state.last_alert_time = {}
 
 BASE_URL = "https://data-api.binance.vision/api/v3"
 
@@ -129,12 +142,24 @@ def check_btc_trend():
     except Exception:
         return True, "BTC Check Bypassed"
 
+def check_1h_trend(raw_symbol, current_price):
+    try:
+        res = requests.get(f"{BASE_URL}/klines", params={'symbol': raw_symbol, 'interval': '1h', 'limit': 60}, timeout=5)
+        if res.status_code != 200:
+            return True
+        ohlcv = res.json()
+        closes = pd.Series([float(x[4]) for x in ohlcv])
+        ema50 = closes.ewm(span=50, adjust=False).mean().iloc[-1]
+        return current_price >= ema50
+    except Exception:
+        return True
+
 def scan_market():
-    # 1. BTC Safety Filter පරීක්ෂාව
+    # 1. BTC Safety Filter
     btc_safe, btc_msg = check_btc_trend()
     if enable_btc_filter:
         if not btc_safe:
-            st.warning(f"⚠️ **Scan එක අත්හිටුවන ලදී:** {btc_msg}. වෙළඳපොළ පහත බසින බැවින් False Pump Signals වැළැක්වීමට නව Alerts නිකුත් නොකෙරේ.")
+            st.warning(f"⚠️ **Scan එක අත්හිටුවන ලදී:** {btc_msg}. වෙළඳපොළ පහත බසින බැවින් Alerts නිකුත් නොකෙරේ.")
             return []
         else:
             st.info(f"🛡️ {btc_msg}")
@@ -160,6 +185,7 @@ def scan_market():
             
     sorted_pairs = sorted(active_usdt_pairs, key=lambda x: x['quoteVolume'], reverse=True)[:limit_pairs]
     progress_bar = st.progress(0)
+    current_time = time.time()
     
     for i, item in enumerate(sorted_pairs):
         raw_symbol = item['symbol']
@@ -170,6 +196,7 @@ def scan_market():
             continue
             
         try:
+            # 15m Klines
             kline_res = requests.get(
                 f"{BASE_URL}/klines", 
                 params={'symbol': raw_symbol, 'interval': '15m', 'limit': 40}, 
@@ -200,12 +227,17 @@ def scan_market():
             open_price = df['open'].iloc[-1]
             live_price_change = ((real_time_price - open_price) / open_price) * 100
             
+            # 15m Conditions
             if (
                 current_volume > (avg_volume * volume_threshold)
                 and live_price_change >= price_threshold
                 and (rsi_min <= current_rsi <= rsi_max)
                 and real_time_price > current_ema
             ):
+                # 2. 1h Trend Confirmation (50 EMA)
+                if enable_1h_filter and not check_1h_trend(raw_symbol, real_time_price):
+                    continue
+
                 tp1_val = real_time_price * 1.025
                 tp2_val = real_time_price * 1.050
                 sl_val = real_time_price * 0.985
@@ -233,12 +265,14 @@ def scan_market():
                     "Volume Spike": spike_str
                 })
                 
-                if display_symbol not in st.session_state.sent_alerts:
+                # Cooldown Check: පසුගිය විනාඩි 60 (තත්පර 3600) තුළ alert එකක් ගොස් නොමැති නම් පමණක් යැවීම
+                last_sent = st.session_state.last_alert_time.get(display_symbol, 0)
+                if current_time - last_sent > 3600:
                     send_telegram_alert(
                         display_symbol, price_str, change_str, spike_str, rsi_str, 
                         tp1_str, tp2_str, sl_str, high_str, low_str
                     )
-                    st.session_state.sent_alerts.add(display_symbol)
+                    st.session_state.last_alert_time[display_symbol] = current_time
                     
         except Exception:
             continue
@@ -249,10 +283,13 @@ def scan_market():
     return alerts
 
 if st.button("Manual Scan 🔍") or auto_refresh:
-    with st.spinner("දත්ත විශ්ලේෂණය කරමින් පවතී..."):
+    with st.spinner("දත්ත සහ 1h Trend විශ්ලේෂණය කරමින් පවතී..."):
         results = scan_market()
         if results:
             st.success(f"කාසි {len(results)} ක් හමුවිය!")
+            if enable_sound:
+                play_alert_sound()
+
             df_display = pd.DataFrame(results).drop(columns=['raw_symbol'])
             st.dataframe(df_display, use_container_width=True)
             
