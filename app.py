@@ -13,7 +13,9 @@ st.set_page_config(page_title="Institutional Multi-Timeframe AI Terminal", layou
 TELEGRAM_BOT_TOKEN = "8277509351:AAFgtRQ6jNApDmGjaZ4ARbqAHIu7us_MACk"
 TELEGRAM_CHAT_ID = "7929509451"
 DEFAULT_GEMINI_KEY = ""
-BASE_URL = "https://data-api.binance.vision/api/v3"
+
+SPOT_BASE_URL = "https://data-api.binance.vision/api/v3"
+FUTURES_BASE_URL = "https://fapi.binance.com/fapi/v1"
 
 def send_scanner_telegram_alert(signal_type, coin, price, change, volume_spike, rsi_val, tp1, tp2, sl, dominance_info, pattern_name, ai_verdict):
     clean_symbol = coin.replace('/', '_')
@@ -102,20 +104,34 @@ def calculate_atr(df, period=14):
     high_cp = (df['high'] - df['close'].shift()).abs()
     low_cp = (df['low'] - df['close'].shift()).abs()
     tr = pd.concat([high_low, high_cp, low_cp], axis=1).max(axis=1)
-    return tr.rolling(period).mean().iloc[-1]
+    return tr.rolling(min(period, len(df))).mean().iloc[-1]
 
 def get_orderbook_ratio(raw_symbol):
+    # Try Spot depth first
     try:
-        res = requests.get(f"{BASE_URL}/depth", params={'symbol': raw_symbol, 'limit': 20}, timeout=4)
-        if res.status_code != 200:
-            return 50.0, 50.0
-        data = res.json()
-        bids = sum([float(b[1]) for b in data.get('bids', [])])
-        asks = sum([float(a[1]) for a in data.get('asks', [])])
-        total = bids + asks
-        return (round((bids / total) * 100, 1), round((asks / total) * 100, 1)) if total > 0 else (50.0, 50.0)
+        res = requests.get(f"{SPOT_BASE_URL}/depth", params={'symbol': raw_symbol, 'limit': 20}, timeout=4)
+        if res.status_code == 200:
+            data = res.json()
+            bids = sum([float(b[1]) for b in data.get('bids', [])])
+            asks = sum([float(a[1]) for a in data.get('asks', [])])
+            total = bids + asks
+            return (round((bids / total) * 100, 1), round((asks / total) * 100, 1)) if total > 0 else (50.0, 50.0)
     except Exception:
-        return 50.0, 50.0
+        pass
+
+    # Try Futures depth fallback
+    try:
+        res = requests.get(f"{FUTURES_BASE_URL}/depth", params={'symbol': raw_symbol, 'limit': 20}, timeout=4)
+        if res.status_code == 200:
+            data = res.json()
+            bids = sum([float(b[1]) for b in data.get('bids', [])])
+            asks = sum([float(a[1]) for a in data.get('asks', [])])
+            total = bids + asks
+            return (round((bids / total) * 100, 1), round((asks / total) * 100, 1)) if total > 0 else (50.0, 50.0)
+    except Exception:
+        pass
+
+    return 50.0, 50.0
 
 def detect_candlestick_pattern(df):
     if len(df) < 5:
@@ -143,39 +159,56 @@ def detect_candlestick_pattern(df):
         return "Three Black Crows 🩸"
     return "Volume Breakout ⚡"
 
-# ================= MULTI-TIMEFRAME DATA ENGINE =================
+# ================= SMART DUAL (SPOT + FUTURES) MTF FETCH =================
 def fetch_mtf_data(symbol):
     tf_data = {}
     timeframes = ['15m', '1h', '4h', '1d']
+    
+    # 1. Determine Endpoint (Spot or Futures)
+    use_futures = False
+    chk = requests.get(f"{SPOT_BASE_URL}/ticker/price", params={'symbol': symbol}, timeout=4)
+    if chk.status_code != 200:
+        chk_f = requests.get(f"{FUTURES_BASE_URL}/ticker/price", params={'symbol': symbol}, timeout=4)
+        if chk_f.status_code == 200:
+            use_futures = True
+        else:
+            return None, False
+
+    base_endpoint = FUTURES_BASE_URL if use_futures else SPOT_BASE_URL
+
     for tf in timeframes:
         try:
-            res = requests.get(f"{BASE_URL}/klines", params={'symbol': symbol, 'interval': tf, 'limit': 35}, timeout=5)
+            res = requests.get(f"{base_endpoint}/klines", params={'symbol': symbol, 'interval': tf, 'limit': 35}, timeout=5)
             if res.status_code == 200:
-                df = pd.DataFrame(res.json(), columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])
-                for col in ['close', 'open', 'high', 'low', 'volume']:
-                    df[col] = df[col].astype(float)
-                
-                rsi = calculate_rsi(df['close'], period=14).iloc[-1]
-                ema20 = df['close'].ewm(span=20, adjust=False).mean().iloc[-1]
-                ema50 = df['close'].ewm(span=50, adjust=False).mean().iloc[-1]
-                current_p = df['close'].iloc[-1]
-                
-                is_bullish = current_p >= ema20 and rsi >= 48
-                tf_data[tf] = {
-                    "price": current_p,
-                    "rsi": round(rsi, 1),
-                    "ema20": ema20,
-                    "ema50": ema50,
-                    "status": "BULLISH 🟢" if is_bullish else "BEARISH 🔴",
-                    "raw_bull": is_bullish,
-                    "atr": calculate_atr(df, period=14),
-                    "df": df
-                }
+                raw_candles = res.json()
+                if len(raw_candles) >= 3:
+                    df = pd.DataFrame(raw_candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])
+                    for col in ['close', 'open', 'high', 'low', 'volume']:
+                        df[col] = df[col].astype(float)
+                    
+                    rsi_series = calculate_rsi(df['close'], period=min(14, len(df)-1))
+                    rsi = rsi_series.iloc[-1] if not rsi_series.empty and not pd.isna(rsi_series.iloc[-1]) else 50.0
+                    ema20 = df['close'].ewm(span=min(20, len(df)), adjust=False).mean().iloc[-1]
+                    ema50 = df['close'].ewm(span=min(50, len(df)), adjust=False).mean().iloc[-1]
+                    current_p = df['close'].iloc[-1]
+                    
+                    is_bullish = current_p >= ema20 and rsi >= 48
+                    tf_data[tf] = {
+                        "price": current_p,
+                        "rsi": round(rsi, 1),
+                        "ema20": ema20,
+                        "ema50": ema50,
+                        "status": "BULLISH 🟢" if is_bullish else "BEARISH 🔴",
+                        "raw_bull": is_bullish,
+                        "atr": calculate_atr(df, period=14),
+                        "df": df
+                    }
         except Exception:
             continue
-    return tf_data
+            
+    return tf_data, use_futures
 
-# ================= INSTITUTIONAL MTF & DUAL-SETUP SYNTHESIZER =================
+# ================= INSTITUTIONAL MTF SYNTHESIZER =================
 def compute_mtf_institutional_setup(coin, current_price, mtf_data, dom_info, selected_theories):
     bull_count = sum(1 for tf, d in mtf_data.items() if d['raw_bull'])
     total_tfs = max(1, len(mtf_data))
@@ -187,78 +220,81 @@ def compute_mtf_institutional_setup(coin, current_price, mtf_data, dom_info, sel
     final_direction = "STRONG LONG" if long_score >= 75 else ("STRONG SHORT" if short_score >= 75 else ("SCALP LONG" if is_long_priority else "SCALP SHORT"))
     confidence = max(long_score, short_score)
     
-    atr_15m = mtf_data.get('15m', {}).get('atr', current_price * 0.015)
-    
-    # Primary Long Plan
+    # Select available lowest timeframe ATR
+    atr_val = current_price * 0.02
+    for tf_k in ['15m', '1h', '4h']:
+        if tf_k in mtf_data:
+            atr_val = mtf_data[tf_k]['atr']
+            break
+            
     entry_l_min = current_price * 0.997
     entry_l_max = current_price * 1.002
-    sl_long = current_price - (atr_15m * 1.6)
-    tp1_l = current_price + (atr_15m * 2.5)
-    tp2_l = current_price + (atr_15m * 4.2)
-    tp3_l = current_price + (atr_15m * 6.5)
+    sl_long = current_price - (atr_val * 1.6)
+    tp1_l = current_price + (atr_val * 2.5)
+    tp2_l = current_price + (atr_val * 4.2)
+    tp3_l = current_price + (atr_val * 6.5)
     
-    # Alternate Short / Hedge Plan
     entry_s_min = current_price * 1.003
     entry_s_max = current_price * 0.998
-    sl_short = current_price + (atr_15m * 1.6)
-    tp1_s = max(0.000001, current_price - (atr_15m * 2.5))
-    tp2_s = max(0.000001, current_price - (atr_15m * 4.2))
-    tp3_s = max(0.000001, current_price - (atr_15m * 6.5))
+    sl_short = current_price + (atr_val * 1.6)
+    tp1_s = max(0.000001, current_price - (atr_val * 2.5))
+    tp2_s = max(0.000001, current_price - (atr_val * 4.2))
+    tp3_s = max(0.000001, current_price - (atr_val * 6.5))
     
-    # Active plan assignment
+    fmt = ".5f" if current_price < 1 else ".4f"
+
     if is_long_priority:
-        active_entry = f"{entry_l_min:,.4f} - {entry_l_max:,.4f}"
-        active_sl = f"{sl_long:,.4f}"
-        active_tp1 = f"{tp1_l:,.4f}"
-        active_tp2 = f"{tp2_l:,.4f}"
-        active_tp3 = f"{tp3_l:,.4f}"
+        active_entry = f"{format(entry_l_min, fmt)} - {format(entry_l_max, fmt)}"
+        active_sl = format(sl_long, fmt)
+        active_tp1 = format(tp1_l, fmt)
+        active_tp2 = format(tp2_l, fmt)
+        active_tp3 = format(tp3_l, fmt)
         active_rr = "1:2.8"
         active_lev = "5x - 10x" if confidence >= 75 else "3x - 5x"
     else:
-        active_entry = f"{entry_s_max:,.4f} - {entry_s_min:,.4f}"
-        active_sl = f"{sl_short:,.4f}"
-        active_tp1 = f"{tp1_s:,.4f}"
-        active_tp2 = f"{tp2_s:,.4f}"
-        active_tp3 = f"{tp3_s:,.4f}"
+        active_entry = f"{format(entry_s_max, fmt)} - {format(entry_s_min, fmt)}"
+        active_sl = format(sl_short, fmt)
+        active_tp1 = format(tp1_s, fmt)
+        active_tp2 = format(tp2_s, fmt)
+        active_tp3 = format(tp3_s, fmt)
         active_rr = "1:2.6"
         active_lev = "3x - 5x"
 
-    # Multi-timeframe Summary Text
     mtf_lines = []
     for tf in ['1d', '4h', '1h', '15m']:
         if tf in mtf_data:
             d = mtf_data[tf]
             mtf_lines.append(f"• <b>{tf.upper()}:</b> {d['status']} (RSI: {d['rsi']})")
+        else:
+            mtf_lines.append(f"• <b>{tf.upper()}:</b> NEW LISTING / NO DATA ℹ️")
     mtf_summary = "\n".join(mtf_lines)
 
-    # Theory Findings
     theory_findings = []
     for th in selected_theories:
         short_t = th.split("—")[0].strip()
         if "Smart Money" in short_t:
-            finding = f"HTF (4h/1d) Order Block confirms {'Demand zone holding' if is_long_priority else 'Supply mitigation rejection'}. 15m FVG unmitigated."
+            finding = f"Order Block structure indicates {'Demand accumulation' if is_long_priority else 'Supply mitigation rejection'}. Fair Value Gap mapped."
         elif "Wyckoff" in short_t:
-            finding = f"{'Phase C Spring / Sign of Strength (SOS)' if is_long_priority else 'Phase C Upthrust After Distribution (UTAD)'} confirmed across 1h timeframe."
+            finding = f"{'Phase C Spring / SOS confirmation' if is_long_priority else 'Distribution breakdown (UTAD)'} based on dynamic volume."
         elif "Dow" in short_t:
-            finding = f"Market Structure shows {'Bullish Higher Highs & Higher Lows (BOS)' if is_long_priority else 'Bearish Lower Highs & Lower Lows (CHoCH)'} on 1h/15m."
+            finding = f"Structure shows {'Bullish BOS (Higher Highs)' if is_long_priority else 'Bearish CHoCH (Lower Lows)'}."
         elif "Elliott" in short_t:
-            finding = f"{'Wave 3 Impulse extension unfolding' if is_long_priority else 'Corrective C-Wave downward impulse'}."
+            finding = f"{'Impulse Wave extension unfolding' if is_long_priority else 'Corrective downward impulse'}."
         elif "RSI" in short_t:
-            rsi_val = mtf_data.get('15m', {}).get('rsi', 50)
-            finding = f"Momentum aligned: RSI at {rsi_val} reflects {'solid buyer accumulation' if is_long_priority else 'heavy institutional selling pressure'}."
+            finding = f"Momentum healthy without immediate multi-timeframe divergence."
         else:
-            finding = f"Confluence aligns with {'macro resistance breakout' if is_long_priority else 'macro support breakdown'}."
+            finding = f"Confluence aligns with {'upper resistance breakout' if is_long_priority else 'support breakdown'}."
         theory_findings.append({"theory": short_t, "finding": finding})
 
     thesis = (
-        f"Cross-Timeframe synthesis across 1D, 4H, 1H, and 15M concludes a {final_direction} bias "
-        f"with a {long_score}% Long vs {short_score}% Short confluence score. "
-        f"Entry is optimized for institutional liquidity mitigation."
+        f"Multi-Timeframe synthesis concludes a {final_direction} bias "
+        f"with {long_score}% Long vs {short_score}% Short confluence score. "
+        f"Execution mapped to institutional liquidity levels."
     )
 
     invalidation = (
-        f"Candle close below ${sl_long:,.4f} invalidates the Bullish Structure." if is_long_priority
-        else f"Candle close above ${sl_short:,.4f} invalidates the Bearish Structure."
+        f"Candle close below ${format(sl_long, fmt)} invalidates the Bullish Structure." if is_long_priority
+        else f"Candle close above ${format(sl_short, fmt)} invalidates the Bearish Structure."
     )
 
     return {
@@ -278,9 +314,8 @@ def compute_mtf_institutional_setup(coin, current_price, mtf_data, dom_info, sel
         "summary": thesis,
         "invalidation": invalidation,
         "mtf_summary": mtf_summary,
-        # Plans for detailed table
-        "long_plan": {"entry": f"{entry_l_min:,.4f} - {entry_l_max:,.4f}", "sl": f"{sl_long:,.4f}", "tp1": f"{tp1_l:,.4f}", "tp2": f"{tp2_l:,.4f}", "tp3": f"{tp3_l:,.4f}", "rr": "1:2.8"},
-        "short_plan": {"entry": f"{entry_s_max:,.4f} - {entry_s_min:,.4f}", "sl": f"{sl_short:,.4f}", "tp1": f"{tp1_s:,.4f}", "tp2": f"{tp2_s:,.4f}", "tp3": f"{tp3_s:,.4f}", "rr": "1:2.6"}
+        "long_plan": {"entry": f"{format(entry_l_min, fmt)} - {format(entry_l_max, fmt)}", "sl": format(sl_long, fmt), "tp1": format(tp1_l, fmt), "tp2": format(tp2_l, fmt), "tp3": format(tp3_l, fmt), "rr": "1:2.8"},
+        "short_plan": {"entry": f"{format(entry_s_max, fmt)} - {format(entry_s_min, fmt)}", "sl": format(sl_short, fmt), "tp1": format(tp1_s, fmt), "tp2": format(tp2_s, fmt), "tp3": format(tp3_s, fmt), "rr": "1:2.6"}
     }
 
 @st.cache_resource
@@ -315,7 +350,7 @@ limit_pairs = st.sidebar.number_input("Scan Pairs Limit", min_value=10, max_valu
 
 def check_btc_trend():
     try:
-        res = requests.get(f"{BASE_URL}/klines", params={'symbol': 'BTCUSDT', 'interval': '15m', 'limit': 30}, timeout=5)
+        res = requests.get(f"{SPOT_BASE_URL}/klines", params={'symbol': 'BTCUSDT', 'interval': '15m', 'limit': 30}, timeout=5)
         if res.status_code != 200:
             return "NEUTRAL", "BTC Data Error"
         ohlcv = res.json()
@@ -328,7 +363,7 @@ def check_btc_trend():
 
 def check_1h_trend(raw_symbol, current_price, signal_type):
     try:
-        res = requests.get(f"{BASE_URL}/klines", params={'symbol': raw_symbol, 'interval': '1h', 'limit': 60}, timeout=5)
+        res = requests.get(f"{SPOT_BASE_URL}/klines", params={'symbol': raw_symbol, 'interval': '1h', 'limit': 60}, timeout=5)
         if res.status_code != 200:
             return True
         closes = pd.Series([float(x[4]) for x in res.json()])
@@ -343,7 +378,7 @@ tab_theory, tab_scanner = st.tabs(["🏛️ Multi-Timeframe Institutional Termin
 # ----------------- TAB 1: MTF DEEP DIVE ANALYZER -----------------
 with tab_theory:
     st.subheader("🏛️ Universal Multi-Timeframe Deep Dive (1D • 4H • 1H • 15M)")
-    st.caption("විශලේෂණය සිදු කරනුයේ සියලුම කාල පරාස (Macro to Micro) එකවර පරීක්ෂා කර Long සහ Short සම්භාවිතාව ගණනය කිරීමෙනි.")
+    st.caption("Spot සහ Futures කාසි සියල්ලටම සහය දක්වයි (Supports New Listings & Perp Contracts).")
 
     ALL_THEORIES = [
         "Smart Money Concepts (SMC / ICT) — Order Blocks, FVG, Liquidity Sweeps",
@@ -373,7 +408,7 @@ with tab_theory:
     st.write("---")
     in_col1, in_col2 = st.columns([3, 1])
     with in_col1:
-        custom_coin_symbol = st.text_input("කාසියේ නම (Coin Symbol):", value="SOL", placeholder="e.g. BTC, ETH, SOL, XRP, DOGE").strip().upper()
+        custom_coin_symbol = st.text_input("කාසියේ නම (Coin Symbol):", value="FLOCK", placeholder="e.g. FLOCK, SOL, BTC, ETH, PEPE").strip().upper()
     with in_col2:
         st.write("##")
         run_theory_btn = st.button("🚀 Multi-Timeframe Analysis", use_container_width=True)
@@ -386,12 +421,13 @@ with tab_theory:
         if not active_theories:
             st.warning("⚠️ කරුණාකර අවම වශයෙන් එක් Theory එකක් තෝරන්න.")
         else:
-            st.info("⏸️ **Market Scanner එක Pause කරන ලදී.** Multi-Timeframe Data (1D, 4H, 1H, 15M) සහ Order Book විශ්ලේෂණය කරමින් පවතී...")
-            with st.spinner(f"Binance දත්ත පරීක්ෂා කරමින් පවතී ({custom_pair})..."):
+            st.info("⏸️ **Market Scanner එක Pause කරන ලදී.** Binance Spot සහ Futures පරීක්ෂා කරමින් පවතී...")
+            with st.spinner(f"{custom_pair} දත්ත සකසමින් පවතී..."):
                 try:
-                    mtf_data_fetched = fetch_mtf_data(custom_pair)
-                    if mtf_data_fetched and '15m' in mtf_data_fetched:
-                        real_p = mtf_data_fetched['15m']['price']
+                    mtf_data_fetched, is_fut = fetch_mtf_data(custom_pair)
+                    if mtf_data_fetched and len(mtf_data_fetched) > 0:
+                        lowest_tf = '15m' if '15m' in mtf_data_fetched else list(mtf_data_fetched.keys())[0]
+                        real_p = mtf_data_fetched[lowest_tf]['price']
                         b_pct, s_pct = get_orderbook_ratio(custom_pair)
                         dom_info_str = f"Buyers: {b_pct}% | Sellers: {s_pct}%"
                         
@@ -403,8 +439,9 @@ with tab_theory:
                         st.session_state.last_mtf = mtf_data_fetched
                         st.session_state.buyers_pct = b_pct
                         st.session_state.sellers_pct = s_pct
+                        st.session_state.is_futures_only = is_fut
                     else:
-                        st.error(f"Binance හි `{custom_pair}` යුගලය හමු නොවීය.")
+                        st.error(f"Binance Spot හෝ Futures යන දෙකෙහිම `{custom_pair}` යුගලය හමු නොවීය. කරුණාකර Symbol එක නිවැරදි දැයි බලන්න.")
                 except Exception as ex:
                     st.error(f"දෝෂයක් ඇති විය: {ex}")
 
@@ -416,30 +453,32 @@ with tab_theory:
         mtf_data = st.session_state.last_mtf
         b_pct = getattr(st.session_state, 'buyers_pct', 50)
         s_pct = getattr(st.session_state, 'sellers_pct', 50)
+        is_fut = getattr(st.session_state, 'is_futures_only', False)
 
+        market_tag = "(Binance Futures / Perp)" if is_fut else "(Binance Spot)"
         st.markdown("---")
         dir_label = plan.get('direction', 'NEUTRAL')
         color_icon = "🟢" if "LONG" in dir_label else "🔴"
         
-        st.markdown(f"## {color_icon} Final Multi-Timeframe Verdict: **{dir_label}** for **{coin_sym}/USDT**")
+        st.markdown(f"## {color_icon} Final Multi-Timeframe Verdict: **{dir_label}** for **{coin_sym}/USDT** `{market_tag}`")
         
-        # MTF Score Cards
         score_c1, score_c2, score_c3, score_c4 = st.columns(4)
         score_c1.metric("Long Confluence Score", f"{plan.get('long_score')}%")
         score_c2.metric("Short Confluence Score", f"{plan.get('short_score')}%")
-        score_c3.metric("Live Price", f"${real_p:,.4f}")
+        p_fmt = ":,.5f" if real_p < 1 else ":,.4f"
+        score_c3.metric("Live Price", f"${format(real_p, p_fmt[1:])}")
         score_c4.metric("Order Flow", f"🟢 {b_pct}% / 🔴 {s_pct}%")
 
-        # Timeframe Status Matrix
         st.markdown("#### ⏳ Timeframe Health Matrix")
         tf_cols = st.columns(4)
         for idx, tf_name in enumerate(['1d', '4h', '1h', '15m']):
-            if tf_name in mtf_data:
-                d = mtf_data[tf_name]
-                with tf_cols[idx]:
+            with tf_cols[idx]:
+                if tf_name in mtf_data:
+                    d = mtf_data[tf_name]
                     st.metric(f"Timeframe: {tf_name.upper()}", d['status'], f"RSI: {d['rsi']}")
+                else:
+                    st.metric(f"Timeframe: {tf_name.upper()}", "NEW LISTING ℹ️", "N/A")
 
-        # Charts & Execution Plan
         chart_c, card_c = st.columns([3, 2])
         with chart_c:
             st.markdown("### 📊 Interactive Technical Chart")
@@ -466,7 +505,6 @@ with tab_theory:
                     else:
                         st.error(f"Telegram Error: {t_res_msg.text}")
 
-        # Long vs Short Comparison Table
         st.markdown("---")
         st.markdown("### ⚖️ Dual Action Plan (Long vs Short Comparison)")
         dual_data = {
@@ -482,7 +520,6 @@ with tab_theory:
         }
         st.dataframe(pd.DataFrame(dual_data), use_container_width=True, hide_index=True)
 
-        # Theories Breakdown
         st.markdown("---")
         st.markdown("### 🧠 Theory-by-Theory Confluence Findings")
         breakdown = plan.get("theory_breakdown", [])
@@ -493,7 +530,6 @@ with tab_theory:
                     st.success(f"**{b_item.get('theory')}**")
                     st.write(b_item.get('finding'))
 
-        # Invalidation & Checklist
         st.markdown("---")
         st.markdown("### 📋 Institutional Risk Management Roadmap")
         sum_col1, sum_col2 = st.columns([2, 1])
@@ -515,7 +551,7 @@ with tab_scanner:
 
     def scan_market_now():
         alerts = []
-        res = requests.get(f"{BASE_URL}/ticker/24hr", timeout=10)
+        res = requests.get(f"{SPOT_BASE_URL}/ticker/24hr", timeout=10)
         if res.status_code != 200:
             return alerts
         tickers = res.json()
@@ -534,7 +570,7 @@ with tab_scanner:
             if not real_time_price or raw_symbol == 'BTCUSDT':
                 continue
             try:
-                kline_res = requests.get(f"{BASE_URL}/klines", params={'symbol': raw_symbol, 'interval': '15m', 'limit': 40}, timeout=5)
+                kline_res = requests.get(f"{SPOT_BASE_URL}/klines", params={'symbol': raw_symbol, 'interval': '15m', 'limit': 40}, timeout=5)
                 if kline_res.status_code != 200:
                     continue
                 df = pd.DataFrame(kline_res.json(), columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])
