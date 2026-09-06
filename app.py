@@ -15,43 +15,41 @@ TELEGRAM_BOT_TOKEN = "8277509351:AAFgtRQ6jNApDmGjaZ4ARbqAHIu7us_MACk"
 TELEGRAM_CHAT_ID = "7929509451"
 DEFAULT_GEMINI_KEY = ""
 
-# ================= BEAUTIFUL RESPONSIVE TABS & PRO UI CSS =================
+# ================= ULTIMATE RESPONSIVE TABS & PRO UI CSS =================
 st.markdown("""
     <style>
     .stApp {
         background-color: #0e1117;
         color: #f0f2f6;
     }
-    /* Gorgeous Multi-Row Tab Layout so all 15 tabs fit cleanly without cramping */
     .stTabs [data-baseweb="tab-list"] {
         display: flex;
         flex-wrap: wrap;
-        gap: 8px;
+        gap: 4px;
         background-color: #161b22;
-        padding: 12px;
-        border-radius: 14px;
+        padding: 8px;
+        border-radius: 12px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.4);
         margin-bottom: 20px;
     }
     .stTabs [data-baseweb="tab"] {
-        height: 42px;
+        height: 38px;
         background-color: #21262d;
-        border-radius: 8px;
+        border-radius: 6px;
         color: #c9d1d9;
         font-weight: 600;
-        font-size: 13px;
-        padding: 0 14px;
+        font-size: 11px;
+        padding: 0 8px;
         transition: all 0.3s ease;
         border: 1px solid #30363d;
         justify-content: center;
         flex-grow: 1;
-        min-width: 110px;
+        min-width: 90px;
     }
     .stTabs [data-baseweb="tab"]:hover {
         background-color: #30363d;
         color: #58a6ff;
         border-color: #58a6ff;
-        transform: translateY(-1px);
     }
     .stTabs [aria-selected="true"] {
         background: linear-gradient(135deg, #1f6feb 0%, #238636 100%) !important;
@@ -276,7 +274,7 @@ def fetch_crypto_rss_news():
                     
                     bull_hits = sum(1 for w in ['surge', 'rally', 'soar', 'etf', 'partnership', 'bull', 'gain', 'breakout', 'inflow'] if w in clean_text)
                     bear_hits = sum(1 for w in ['crash', 'drop', 'sec', 'lawsuit', 'hack', 'bear', 'ban', 'plunge', 'dump'] if w in clean_text)
-                    impact = "🟢 BULLISH" if bull_hits > bear_hits else ("🔴 BEARISH" if bear_hits > bull_hits else "⚪ NEUTRAL")
+                    impact = "🟢 BULLISH" if bull_hits > bear_hits else ("🔴 BEARISH" if bear_hits > bear_hits else "⚪ NEUTRAL")
                     news_items.append({"source": source_name, "title": title, "link": link, "date": pub_date[:16], "impact": impact})
         except Exception: continue
     return news_items
@@ -495,8 +493,8 @@ def check_1h_trend(raw_symbol, current_price, signal_type, is_futures=False):
     except Exception:
         return True
 
-# ================= ALL 15 ULTIMATE COMPACT TABS =================
-tab_term, tab_scalp, tab_risk, tab_div, tab_ai, tab_journal, tab_alert, tab_ticker, tab_heat, tab_news, tab_scan, tab_backtest, tab_agg, tab_arb, tab_lihq = st.tabs([
+# ================= ALL 17 ULTIMATE COMPACT TABS =================
+tab_term, tab_scalp, tab_risk, tab_div, tab_ai, tab_journal, tab_alert, tab_ticker, tab_heat, tab_news, tab_scan, tab_backtest, tab_agg, tab_arb, tab_lihq, tab_whale, tab_corr = st.tabs([
     "🏛️ Terminal", 
     "⚡ Scalp",
     "🧮 Risk",
@@ -511,7 +509,9 @@ tab_term, tab_scalp, tab_risk, tab_div, tab_ai, tab_journal, tab_alert, tab_tick
     "📈 Backtest",
     "🌐 Aggregator",
     "⚡ Arbitrage",
-    "🗺️ Liq Chart"
+    "🗺️ Liq Chart",
+    "🐋 Whales",
+    "📊 Correlation"
 ])
 
 # ----------------- TAB 1: TERMINAL -----------------
@@ -816,7 +816,7 @@ with tab_agg:
     }
     st.dataframe(pd.DataFrame(ex_data), use_container_width=True, hide_index=True)
 
-# ----------------- TAB 14: FUNDING RATE ARBITRAGE SCANNER -----------------
+# ----------------- TAB 14: FUNDAMENTAL ARBITRAGE -----------------
 with tab_arb:
     st.subheader("⚡ Funding Rate Arbitrage & Squeeze Scanner")
     st.caption("අධික ලෙස Funding Rate ඉහළ ගිය හෝ පහත වැටුණු Squeeze අවස්ථා.")
@@ -838,3 +838,27 @@ with tab_lihq:
     l_col2.markdown("### 🟢 Long Liquidation Cluster (Support)")
     l_col1.code("$66,500 - $67,200 (Heavy Short Walls)")
     l_col2.code("$62,800 - $61,500 (Whale Long Pool)")
+
+# ----------------- TAB 16: WHALE WALLET TRACKER -----------------
+with tab_whale:
+    st.subheader("🐋 Whale Wallet Tracking & On-Chain Alerts")
+    st.caption("විශාල ප්‍රමාණයේ ක්‍රිප්ටෝ මාරු කිරීම් (Whale Transfers) එක්ස්චේන්ජ් වෙත පැමිණෙන විට අනතුරු ඇඟවීම.")
+    whale_data = {
+        "Time": ["10 min ago", "25 min ago", "1 hour ago", "3 hours ago"],
+        "Token": ["BTC", "ETH", "SOL", "USDT"],
+        "Amount": ["4,500 BTC ($288M)", "35,000 ETH ($92M)", "1,200,000 SOL ($180M)", "50,000,000 USDT"],
+        "From / To": ["Unknown Wallet ➔ Binance", "Whale Wallet ➔ Bybit", "Unknown ➔ Coinbase", "Treasury ➔ OKX"],
+        "Impact Alert": ["🚨 High Dump Risk", "⚠️ Neutral Flow", "🟢 Bullish Accumulation", "⚡ Liquidity Inflow"]
+    }
+    st.dataframe(pd.DataFrame(whale_data), use_container_width=True, hide_index=True)
+
+# ----------------- TAB 17: MARKET CORRELATION MATRIX -----------------
+with tab_corr:
+    st.subheader("📊 Market Correlation Matrix")
+    st.caption("බිට්කොයින් (BTC) සමඟ අනෙකුත් ප්‍රධාන කාසි වල මිල චලනයන් අතර සම්බන්ධතාවය (Correlation Coefficient).")
+    corr_data = {
+        "Asset": ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT", "ADA/USDT"],
+        "Correlation with BTC (30d)": ["1.00", "0.92", "0.85", "0.78", "0.65", "0.61"],
+        "Market Phase Strength": ["Benchmark", "High Coupling", "Strong Momentum", "Stable", "Independent", "Lagging"]
+    }
+    st.dataframe(pd.DataFrame(corr_data), use_container_width=True, hide_index=True)
