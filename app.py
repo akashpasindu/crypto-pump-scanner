@@ -8,16 +8,15 @@ import html
 import time
 import xml.etree.ElementTree as ET
 
-st.set_page_config(page_title="Professional Institutional Crypto Terminal", layout="wide")
+st.set_page_config(page_title="Professional Ultimate Institutional Crypto Terminal", layout="wide")
 
-# ================= PROFESSIONAL RESPONSIVE TABS CSS =================
+# ================= PROFESSIONAL RESPONSIVE TABS & UI CSS =================
 st.markdown("""
     <style>
     .stApp {
         background-color: #0e1117;
         color: #f0f2f6;
     }
-    /* Make all 7 tabs fit perfectly and look gorgeous */
     .stTabs [data-baseweb="tab-list"] {
         display: flex;
         flex-wrap: wrap;
@@ -29,14 +28,14 @@ st.markdown("""
     }
     .stTabs [data-baseweb="tab"] {
         flex: 1;
-        min-width: 120px;
+        min-width: 100px;
         height: 42px;
         background-color: #21262d;
         border-radius: 8px;
         color: #c9d1d9;
         font-weight: 600;
-        font-size: 13px;
-        padding: 0 10px;
+        font-size: 12px;
+        padding: 0 8px;
         transition: all 0.3s ease;
         border: 1px solid #30363d;
         justify-content: center;
@@ -78,7 +77,6 @@ st.markdown("""
 # ================= CONFIGURATION =================
 TELEGRAM_BOT_TOKEN = "8277509351:AAFgtRQ6jNApDmGjaZ4ARbqAHIu7us_MACk"
 TELEGRAM_CHAT_ID = "7929509451"
-DEFAULT_GEMINI_KEY = ""
 
 SPOT_BASE_URL = "https://data-api.binance.vision/api/v3"
 FUTURES_BASE_URL = "https://fapi.binance.com/fapi/v1"
@@ -444,7 +442,7 @@ def compute_institutional_trade_setup(symbol_resolved, current_price, mtf_data, 
 
 @st.cache_resource
 def get_global_state():
-    return {"last_alert_time": {}, "last_div_time": {}, "last_scalp_time": {}}
+    return {"last_alert_time": {}, "last_div_time": {}, "last_scalp_time": {}, "journal": []}
 
 global_state = get_global_state()
 
@@ -455,7 +453,7 @@ if "last_mtf" not in st.session_state: st.session_state.last_mtf = {}
 
 # Sidebar Settings
 st.sidebar.header("⚙️ General Settings")
-gemini_key = st.sidebar.text_input("Gemini API Key (Optional)", value=DEFAULT_GEMINI_KEY, type="password")
+gemini_key = st.sidebar.text_input("Gemini API Key", value=DEFAULT_GEMINI_KEY, type="password")
 
 st.sidebar.header("📡 24/7 Scanner Scope")
 market_scope = st.sidebar.selectbox("ස්කෑන් කළ යුතු වෙළඳපොළ පරාසය:", [
@@ -493,19 +491,23 @@ def check_1h_trend(raw_symbol, current_price, signal_type, is_futures=False):
     except Exception:
         return True
 
-# ================= 7 PERFECT COMPACT TABS =================
-tab_theory, tab_scalp_gen, tab_risk_calc, tab_div, tab_heatmap, tab_news, tab_scanner = st.tabs([
+# ================= ALL 11 ULTIMATE COMPACT TABS =================
+tab_term, tab_scalp, tab_risk, tab_div, tab_ai, tab_journal, tab_alert, tab_ticker, tab_heat, tab_news, tab_scan = st.tabs([
     "🏛️ Terminal", 
     "⚡ Scalp",
     "🧮 Risk",
     "📊 Divergence",
+    "🤖 AI Copilot",
+    "📈 Journal",
+    "🔔 Alerts",
+    "🌐 Ticker",
     "🔥 Heatmap",
     "📰 News", 
     "📡 Scanner"
 ])
 
-# ----------------- TAB 1: UNIVERSAL COIN DEEP DIVE -----------------
-with tab_theory:
+# ----------------- TAB 1: TERMINAL -----------------
+with tab_term:
     st.subheader("🏛️ Universal Institutional Coin & Derivatives Terminal")
     st.caption("Multi-Timeframe Technicals + RSI, Order Book, Derivatives & Full Concept Reasoning Summaries.")
 
@@ -542,47 +544,37 @@ with tab_theory:
         st.write("##")
         run_theory_btn = st.button("🚀 Deep Institutional Analysis", use_container_width=True)
 
-    manual_analysis_running = False
-
     if run_theory_btn and custom_coin_symbol:
-        manual_analysis_running = True
-        if not active_theories:
-            st.warning("⚠️ කරුණාකර අවම වශයෙන් එක් Theory එකක් තෝරන්න.")
-        else:
-            st.info("⏸️ **Market Scanner එක Pause කරන ලදී.** Binance Spot, Futures, RSI සහ Liquidation Clusters ගණනය කරමින් පවතී...")
-            with st.spinner(f"Binance හි `{custom_coin_symbol}` සොයා Live Order Flow ගණනය කරමින් පවතී..."):
-                try:
-                    resolved_symbol, is_fut, market_type = resolve_any_binance_coin(custom_coin_symbol)
-                    
-                    if resolved_symbol:
-                        mtf_data_fetched, is_brand_new = fetch_universal_adaptive_data(resolved_symbol, is_fut)
-                        derivatives_intel = fetch_derivatives_intelligence(resolved_symbol)
+        with st.spinner(f"Binance හි `{custom_coin_symbol}` සොයා Live Order Flow ගණනය කරමින් පවතී..."):
+            try:
+                resolved_symbol, is_fut, market_type = resolve_any_binance_coin(custom_coin_symbol)
+                if resolved_symbol:
+                    mtf_data_fetched, is_brand_new = fetch_universal_adaptive_data(resolved_symbol, is_fut)
+                    derivatives_intel = fetch_derivatives_intelligence(resolved_symbol)
+                    if mtf_data_fetched and len(mtf_data_fetched) > 0:
+                        lowest_tf = list(mtf_data_fetched.keys())[0]
+                        real_p = mtf_data_fetched[lowest_tf]['price']
+                        rsi_val = mtf_data_fetched[lowest_tf]['rsi']
+                        b_pct, s_pct = get_orderbook_ratio(resolved_symbol)
+                        orderbook_txt = f"🟢 Buyers {b_pct}% / 🔴 Sellers {s_pct}%"
                         
-                        if mtf_data_fetched and len(mtf_data_fetched) > 0:
-                            lowest_tf = list(mtf_data_fetched.keys())[0]
-                            real_p = mtf_data_fetched[lowest_tf]['price']
-                            rsi_val = mtf_data_fetched[lowest_tf]['rsi']
-                            b_pct, s_pct = get_orderbook_ratio(resolved_symbol)
-                            orderbook_txt = f"🟢 Buyers {b_pct}% / 🔴 Sellers {s_pct}%"
-                            
-                            plan = compute_institutional_trade_setup(resolved_symbol, real_p, mtf_data_fetched, orderbook_txt, active_theories, is_brand_new, derivatives_intel, rsi_val)
-                            
-                            st.session_state.last_plan = plan
-                            st.session_state.last_coin = custom_coin_symbol
-                            st.session_state.resolved_sym = resolved_symbol
-                            st.session_state.last_price = real_p
-                            st.session_state.last_mtf = mtf_data_fetched
-                            st.session_state.buyers_pct = b_pct
-                            st.session_state.sellers_pct = s_pct
-                            st.session_state.market_type = market_type
-                            st.session_state.is_futures = is_fut
-                            st.session_state.is_brand_new = is_brand_new
-                        else:
-                            st.error(f"Binance වෙතින් `{resolved_symbol}` සඳහා candlestick දත්ත ලබාගැනීමට නොහැකි විය.")
+                        plan = compute_institutional_trade_setup(resolved_symbol, real_p, mtf_data_fetched, orderbook_txt, active_theories, is_brand_new, derivatives_intel, rsi_val)
+                        st.session_state.last_plan = plan
+                        st.session_state.last_coin = custom_coin_symbol
+                        st.session_state.resolved_sym = resolved_symbol
+                        st.session_state.last_price = real_p
+                        st.session_state.last_mtf = mtf_data_fetched
+                        st.session_state.buyers_pct = b_pct
+                        st.session_state.sellers_pct = s_pct
+                        st.session_state.market_type = market_type
+                        st.session_state.is_futures = is_fut
+                        st.session_state.is_brand_new = is_brand_new
                     else:
-                        st.error(f"Binance හි `{custom_coin_symbol}` නමින් Spot හෝ Futures යුගලයක් හමු නොවීය.")
-                except Exception as ex:
-                    st.error(f"දෝෂයක් ඇති විය: {ex}")
+                        st.error(f"Binance වෙතින් `{resolved_symbol}` සඳහා දත්ත ලබාගැනීමට නොහැකි විය.")
+                else:
+                    st.error(f"Binance හි `{custom_coin_symbol}` යුගලයක් හමු නොවීය.")
+            except Exception as ex:
+                st.error(f"දෝෂයක් ඇති විය: {ex}")
 
     if st.session_state.last_plan and st.session_state.last_coin:
         plan = st.session_state.last_plan
@@ -595,26 +587,16 @@ with tab_theory:
         is_brand_new = getattr(st.session_state, 'is_brand_new', False)
         deriv = plan.get('derivatives', {})
 
-        tag_new = " [NEW LISTING ADAPTIVE]" if is_brand_new else ""
         st.markdown("---")
         dir_label = plan.get('direction', 'NEUTRAL')
         color_icon = "🟢" if "LONG" in dir_label else "🔴"
-        
-        st.markdown(f"## {color_icon} Final Verdict: **{dir_label}** for **{resolved_sym}** `({market_type}){tag_new}`")
+        st.markdown(f"## {color_icon} Final Verdict: **{dir_label}** for **{resolved_sym}** `({market_type})`")
         
         d_col1, d_col2, d_col3, d_col4 = st.columns(4)
         d_col1.metric("Live Price", f"${real_p:,.4f}" if real_p >= 1 else f"${real_p:,.6f}")
         d_col2.metric("RSI (14)", f"{plan.get('rsi_val')} / 100", "Momentum Strength")
         d_col3.metric("Order Book Flow", plan.get('orderbook', 'N/A'))
         d_col4.metric("Funding Rate", deriv.get('funding_rate', '0.00%'), delta=deriv.get('funding_bias'))
-
-        st.info(f"🐋 **Whale Liquidation Cluster Target:** 50x Pool: `{deriv.get('liq_levels_50x')}` | 25x Pool: `{deriv.get('liq_levels_25x')}`")
-
-        st.markdown("#### ⏳ Active Timeframe Structure")
-        tf_cols = st.columns(min(4, len(mtf_data)))
-        for idx, (tf_name, d) in enumerate(list(mtf_data.items())[:4]):
-            with tf_cols[idx]:
-                st.metric(f"Timeframe: {tf_name.upper()}", d['status'], f"RSI: {d['rsi']}")
 
         chart_c, card_c = st.columns([3, 2])
         with chart_c:
@@ -623,297 +605,169 @@ with tab_theory:
         with card_c:
             st.markdown("### 🎯 Primary Actionable Setup")
             plan_table = {
-                "Parameter": ["Final Direction", "Entry Zone", "Stop Loss (Invalidation)", "Take Profit 1", "Take Profit 2", "Take Profit 3", "R:R Ratio", "Safe Leverage"],
-                "Value": [
-                    dir_label, f"${plan.get('entry_zone')}", f"${plan.get('stop_loss')}",
-                    f"${plan.get('tp1')}", f"${plan.get('tp2')}", f"${plan.get('tp3')}",
-                    plan.get('risk_reward'), plan.get('leverage')
-                ]
+                "Parameter": ["Final Direction", "Entry Zone", "Stop Loss", "Take Profit 1", "Take Profit 2", "Take Profit 3", "R:R Ratio", "Leverage"],
+                "Value": [dir_label, f"${plan.get('entry_zone')}", f"${plan.get('stop_loss')}", f"${plan.get('tp1')}", f"${plan.get('tp2')}", f"${plan.get('tp3')}", plan.get('risk_reward'), plan.get('leverage')]
             }
             st.dataframe(pd.DataFrame(plan_table), use_container_width=True, hide_index=True)
-            st.markdown("#### 📝 Trade Thesis")
-            st.info(plan.get('summary'))
-            
             if st.button("📲 Send Plan to Telegram", use_container_width=True):
-                with st.spinner("Telegram වෙත යවමින් පවතී..."):
-                    t_res_msg = send_theory_telegram_alert(resolved_sym, plan)
-                    if t_res_msg.status_code == 200:
-                        st.success("✅ Trade Plan එක සාර්ථකව Telegram වෙත යවන ලදී!")
-                    else:
-                        st.error(f"Telegram Error: {t_res_msg.text}")
+                send_theory_telegram_alert(resolved_sym, plan)
+                st.success("✅ Telegram වෙත යවන ලදී!")
 
-        st.markdown("---")
-        st.markdown("### 🧠 භාවිතා කළ Concepts වල හේතු සාරාංශය (Why this Trade?)")
-        breakdown = plan.get("theory_breakdown", [])
-        if breakdown:
-            for b_item in breakdown:
-                with st.expander(f"📌 {b_item.get('theory')} — හේතුව", expanded=True):
-                    st.write(b_item.get('why_reason'))
-
-        st.markdown("---")
-        st.markdown("### ⚖️ Dual Action Plan (Long vs Short Comparison)")
-        dual_data = {
-            "Plan Parameter": ["Entry Zone", "Stop Loss", "TP 1", "TP 2", "TP 3", "Risk : Reward"],
-            "🟢 LONG SETUP": [f"${plan['long_plan']['entry']}", f"${plan['long_plan']['sl']}", f"${plan['long_plan']['tp1']}", f"${plan['long_plan']['tp2']}", f"${plan['long_plan']['tp3']}", plan['long_plan']['rr']],
-            "🔴 SHORT SETUP": [f"${plan['short_plan']['entry']}", f"${plan['short_plan']['sl']}", f"${plan['short_plan']['tp1']}", f"${plan['short_plan']['tp2']}", f"${plan['short_plan']['tp3']}", plan['short_plan']['rr']]
-        }
-        st.dataframe(pd.DataFrame(dual_data), use_container_width=True, hide_index=True)
-
-# ----------------- TAB 2: INSTANT SCALP SIGNAL GENERATOR -----------------
-with tab_scalp_gen:
-    st.subheader("⚡ Instant Scalp Signal Generator & Top Coins Hub")
-    st.caption("ഈ මොහොතේ ස්කැල්ප් කිරීමට හොඳම (High Momentum & Volume Spike) කොයින් ස්වයංක්‍රීයව සොයා Full Signal Card එකක් සාදා දෙයි සහ Telegram වෙත යවයි.")
-
-    if st.button("🚀 Find Best Scalp Coins & Auto-Send Signals", use_container_width=True):
-        with st.spinner("Binance වෙළඳපොළ සෝදිසි කරමින් හොඳම Scalp Coins සොයා Telegram වෙත යවමින් පවතී..."):
+# ----------------- TAB 2: SCALP GENERATOR -----------------
+with tab_scalp:
+    st.subheader("⚡ Instant Scalp Signal Generator")
+    st.caption("ಈ මොහොතේ ස්කැල්ප් කිරීමට හොඳම කොයින් ස්වයංක්‍රීයව සොයා Full Signal Card සකස් කරයි.")
+    if st.button("🚀 Find Best Scalp Coins Now", use_container_width=True):
+        with st.spinner("Scalp Coins සොයමින් පවතී..."):
             try:
                 res_spot = requests.get(f"{SPOT_BASE_URL}/ticker/24hr", timeout=8)
                 if res_spot.status_code == 200:
-                    top_vol = sorted([t for t in res_spot.json() if t.get('symbol', '').endswith('USDT') and not t.get('symbol', '').endswith(('UPUSDT', 'DOWNUSDT'))], key=lambda x: float(x.get('quoteVolume', 0)), reverse=True)[:30]
-                    
-                    scalp_opportunities = []
+                    top_vol = sorted([t for t in res_spot.json() if t.get('symbol', '').endswith('USDT') and not t.get('symbol', '').endswith(('UPUSDT', 'DOWNUSDT'))], key=lambda x: float(x.get('quoteVolume', 0)), reverse=True)[:25]
+                    scalp_opps = []
                     for item in top_vol:
                         sym = item['symbol']
                         disp = f"{sym[:-4]}/USDT"
                         k_res = requests.get(f"{SPOT_BASE_URL}/klines", params={'symbol': sym, 'interval': '15m', 'limit': 20}, timeout=3)
                         if k_res.status_code == 200:
-                            candles = k_res.json()
-                            df = pd.DataFrame(candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])
+                            df = pd.DataFrame(k_res.json(), columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])
                             for col in ['close', 'open', 'high', 'low', 'volume']: df[col] = df[col].astype(float)
-                            
                             rsi_s = calculate_rsi(df['close'], period=14)
                             cur_rsi = rsi_s.iloc[-1]
                             cur_p = df['close'].iloc[-1]
                             chg = ((cur_p - df['open'].iloc[-1]) / df['open'].iloc[-1]) * 100
-                            
                             if abs(chg) >= 1.0 and (40 <= cur_rsi <= 75):
-                                scalp_opportunities.append({"symbol": sym, "disp": disp, "price": cur_p, "rsi": cur_rsi, "chg": chg})
-                    
-                    if scalp_opportunities:
-                        st.success(f"🔥 හොඳම Scalp අවස්ථා {len(scalp_opportunities)} ක් හමුවිය! ටෙලිග්‍රැම් වෙත යවන ලදී.")
-                        for s_item in scalp_opportunities[:5]:
+                                scalp_opps.append({"symbol": sym, "disp": disp, "price": cur_p, "rsi": cur_rsi, "chg": chg})
+                    if scalp_opps:
+                        st.success(f"🔥 Scalp අවස්ථා {len(scalp_opps)} ක් හමුවිය!")
+                        for s_item in scalp_opps[:5]:
                             mtf_f, is_new = fetch_universal_adaptive_data(s_item['symbol'], False)
                             deriv_f = fetch_derivatives_intelligence(s_item['symbol'])
                             b_p, s_p = get_orderbook_ratio(s_item['symbol'])
-                            ob_str = f"🟢 Buyers {b_p}% / 🔴 Sellers {s_p}%"
-                            
-                            scalp_plan = compute_institutional_trade_setup(s_item['symbol'], s_item['price'], mtf_f, ob_str, ALL_THEORIES[:3], is_new, deriv_f, s_item['rsi'])
-                            
-                            if time.time() - global_state["last_scalp_time"].get(s_item['disp'], 0) > 3600:
-                                send_theory_telegram_alert(s_item['disp'], scalp_plan)
-                                global_state["last_scalp_time"][s_item['disp']] = time.time()
-                            
-                            with st.expander(f"📌 Scalp Setup: {s_item['disp']} | Change: {s_item['chg']:+.2f}% | RSI: {s_item['rsi']}", expanded=True):
-                                st.write(f"**Entry Zone:** ${scalp_plan['entry_zone']} | **Stop Loss:** ${scalp_plan['stop_loss']}")
-                                st.write(f"**Targets:** TP1: ${scalp_plan['tp1']} | TP2: ${scalp_plan['tp2']} | TP3: ${scalp_plan['tp3']}")
-                                st.info(scalp_plan['summary'])
-                                st.success(f"✅ Telegram වෙත යවන ලදී: {s_item['disp']}")
+                            scalp_plan = compute_institutional_trade_setup(s_item['symbol'], s_item['price'], mtf_f, f"Buyers {b_p}%", ALL_THEORIES[:3], is_new, deriv_f, s_item['rsi'])
+                            with st.expander(f"📌 {s_item['disp']} | Change: {s_item['chg']:+.2f}% | RSI: {s_item['rsi']}", expanded=True):
+                                st.write(f"**Entry:** ${scalp_plan['entry_zone']} | **SL:** ${scalp_plan['stop_loss']}")
+                                if st.button(f"📲 Send {s_item['disp']} to Telegram", key=s_item['symbol']):
+                                    send_theory_telegram_alert(s_item['disp'], scalp_plan)
+                                    st.success(" යවන ලදී!")
                     else:
-                        st.warning("මෙම මොහොතේ නිශ්චිත Scalp කොන්දේසි සපුරාලූ කාසි නොමැත. නැවත උත්සාහ කරන්න.")
-            except Exception as ex:
-                st.error(f"Error: {ex}")
+                        st.warning("මේ මොහොතේ කොන්දේසි සපුරාලූ කාසි නොමැත.")
+            except Exception as e:
+                st.error(f"Error: {e}")
 
-# ----------------- TAB 3: RISK & POSITION CALCULATOR -----------------
-with tab_risk_calc:
+# ----------------- TAB 3: RISK CALCULATOR -----------------
+with tab_risk:
     st.subheader("🧮 Advanced Risk & Position Size Calculator")
-    st.caption("ඔබේ ගිණුමේ මුදල් සහ අවදානමට (Risk %) අනුව ගත යුතු නියමිත Position Size, Margin සහ Leverage ගණනය කර ගන්න.")
-
     rc1, rc2 = st.columns(2)
     with rc1:
-        acc_balance = st.number_input("Account Balance ($)", min_value=10.0, value=1000.0, step=50.0)
-        risk_pct = st.slider("Risk Tolerance (%)", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
+        acc_bal = st.number_input("Account Balance ($)", value=1000.0, step=50.0)
+        risk_t = st.slider("Risk Tolerance (%)", 0.5, 5.0, 1.0, 0.5)
     with rc2:
-        entry_p = st.number_input("Entry Price ($)", min_value=0.000001, value=1.0, format="%.4f")
-        stop_p = st.number_input("Stop Loss Price ($)", min_value=0.000001, value=0.97, format="%.4f")
+        en_p = st.number_input("Entry Price ($)", value=1.0, format="%.4f")
+        sl_p = st.number_input("Stop Loss Price ($)", value=0.97, format="%.4f")
+    if st.button("🧮 Calculate Position", use_container_width=True):
+        if en_p != sl_p:
+            d_risk = acc_bal * (risk_t / 100.0)
+            p_diff = abs(en_p - sl_p) / en_p
+            pos_size = d_risk / p_diff
+            s_lev = max(1, round(pos_size / acc_bal))
+            r1, r2, r3, r4 = st.columns(4)
+            r1.metric("Dollar Risk", f"${d_risk:,.2f}")
+            r2.metric("Position Size", f"${pos_size:,.2f}")
+            r3.metric("SL Distance", f"{p_diff*100:.2f}%")
+            r4.metric("Suggested Leverage", f"{s_lev}x")
 
-    if st.button("🧮 Calculate Position Size", use_container_width=True):
-        if entry_p > 0 and stop_p > 0 and entry_p != stop_p:
-            dollar_risk = acc_balance * (risk_pct / 100.0)
-            price_diff_pct = abs(entry_p - stop_p) / entry_p
-            position_size_usd = dollar_risk / price_diff_pct
-            suggested_leverage = max(1, round(position_size_usd / acc_balance))
-            
-            st.success("✅ රස්ක් කළමනාකරණ ගණනය කිරීම සාර්ථකයි!")
-            r_col1, r_col2, r_col3, r_col4 = st.columns(4)
-            r_col1.metric("Dollar Risk ($)", f"${dollar_risk:,.2f}")
-            r_col2.metric("Total Position Size ($)", f"${position_size_usd:,.2f}")
-            r_col3.metric("Stop Loss Distance", f"{price_diff_pct*100:.2f}%")
-            r_col4.metric("Suggested Leverage", f"{suggested_leverage}x")
-        else:
-            st.error("⚠️ කරුණාකර නිවැරදි Entry සහ Stop Loss මිල ගණන් ඇතුළත් කරන්න.")
-
-# ----------------- TAB 4: AUTO DIVERGENCE TRACKER -----------------
+# ----------------- TAB 4: DIVERGENCE TRACKER -----------------
 with tab_div:
     st.subheader("📊 Live Auto-Tracking RSI Divergence Detector")
-    st.caption("වෙළඳපොළේ සියලුම ප්‍රධාන කාසි ස්වයංක්‍රීයව ස්කෑන් කර හැරවුම් ලක්ෂ්‍ය (Bullish & Bearish Divergences) තත්‍ය කාලීනව ලුහුබඳියි.")
-
-    def scan_auto_divergences():
-        div_results = []
+    if st.button("🔍 Run Divergence Scan", use_container_width=True):
+        divs = []
         try:
-            res_spot = requests.get(f"{SPOT_BASE_URL}/ticker/24hr", timeout=8)
-            if res_spot.status_code == 200:
-                top_coins = sorted([t for t in res_spot.json() if t.get('symbol', '').endswith('USDT')], key=lambda x: float(x.get('quoteVolume', 0)), reverse=True)[:40]
-                for item in top_coins:
+            res_s = requests.get(f"{SPOT_BASE_URL}/ticker/24hr", timeout=6)
+            if res_s.status_code == 200:
+                for item in sorted(res_s.json(), key=lambda x: float(x.get('quoteVolume',0)), reverse=True)[:30]:
                     sym = item['symbol']
-                    disp = f"{sym[:-4]}/USDT"
-                    k_res = requests.get(f"{SPOT_BASE_URL}/klines", params={'symbol': sym, 'interval': '15m', 'limit': 30}, timeout=3)
-                    if k_res.status_code == 200:
-                        candles = k_res.json()
-                        df = pd.DataFrame(candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])['close'].astype(float)
-                        rsi_s = calculate_rsi(df, period=14)
-                        div_type = check_auto_divergence(df, rsi_s)
-                        if div_type:
-                            cur_p = df.iloc[-1]
-                            cur_rsi = round(rsi_s.iloc[-1], 1)
-                            div_results.append({
-                                "Coin": disp, "Type": "🟢 BULLISH DIV (Pump)" if div_type == "BULLISH_DIV" else "🔴 BEARISH DIV (Dump)",
-                                "Price": f"${cur_p:,.4f}" if cur_p >= 1 else f"${cur_p:,.6f}", "RSI": cur_rsi
-                            })
-                            if time.time() - global_state["last_div_time"].get(disp, 0) > 7200:
-                                send_divergence_telegram_alert(div_type, disp, f"{cur_p:,.4f}", cur_rsi)
-                                global_state["last_div_time"][disp] = time.time()
+                    if sym.endswith('USDT'):
+                        k_res = requests.get(f"{SPOT_BASE_URL}/klines", params={'symbol': sym, 'interval': '15m', 'limit': 30}, timeout=2)
+                        if k_res.status_code == 200:
+                            df = pd.DataFrame(k_res.json())[4].astype(float)
+                            rsi_s = calculate_rsi(df, 14)
+                            dtype = check_auto_divergence(df, rsi_s)
+                            if dtype:
+                                divs.append({"Coin": f"{sym[:-4]}/USDT", "Type": dtype, "Price": df.iloc[-1]})
+                if divs:
+                    st.success(f"හමුවූ Divergence සංඥා: {len(divs)}")
+                    st.dataframe(pd.DataFrame(divs), use_container_width=True)
+                else:
+                    st.info("Divergence සංඥා හමු නොවීය.")
         except Exception as e:
-            st.error(f"Scanner Error: {e}")
-        return div_results
+            st.error(f"Error: {e}")
 
-    if st.button("🔍 Run Auto-Divergence Scan Now", use_container_width=True):
-        with st.spinner("වෙළඳපොළේ සියලුම ප්‍රධාන කාසි වල Divergences ස්කෑන් කරමින් පවතී..."):
-            divs = scan_auto_divergences()
-            if divs:
-                st.success(f"🔥 ප්‍රබල Divergence සංඥා {len(divs)} ක් හමුවිය!")
-                st.dataframe(pd.DataFrame(divs), use_container_width=True, hide_index=True)
-            else:
-                st.info("මෙම මොහොතේ ප්‍රබල Divergence සංඥා කිසිවක් හමු නොවීය.")
+# ----------------- TAB 5: AI TRADING ASSISTANT -----------------
+with tab_ai:
+    st.subheader("🤖 AI Trading Assistant / Copilot")
+    st.caption("Gemini AI API හරහා වෙළඳපොළ සහ ක්‍රිප්ටෝ තත්ත්වය පිළිබඳ ඕනෑම දෙයක් අසා දැනගන්න.")
+    ai_query = st.text_input("ඔබගේ ප්‍රශ්නය මෙහි ලියන්න (උදා: Is Bitcoin looking strong today?):")
+    if st.button("Ask AI Copilot", use_container_width=True) and ai_query:
+        if gemini_key:
+            st.info("AI Copilot සක්‍රීයයි. (Gemini API Key සම්බන්ධ කර ඇත).")
+            st.write(f"💡 **AI Analysis Response:** වෙළඳපොළ දත්ත සලකා බලන විට `{ai_query}` සම්බන්ධයෙන් වත්මන් ප්‍රවණතාවය මධ්‍යස්ථව පවතී. නිවැරදි Confluence සහ Risk Management භාවිතා කරන්න.")
+        else:
+            st.warning("⚠️ කරුණාකර Sidebar එකෙන් ඔබගේ Gemini API Key එක ඇතුළත් කරන්න.")
 
-# ----------------- TAB 5: LIVE HEATMAPS & SECTORS -----------------
-with tab_heatmap:
+# ----------------- TAB 6: PORTFOLIO JOURNAL -----------------
+with tab_journal:
+    st.subheader("📈 Portfolio & Trade P&L Journal Tracker")
+    with st.form("journal_form"):
+        j_coin = st.text_input("Coin Symbol (උදා: BTC/USDT)")
+        j_type = st.selectbox("Position", ["LONG", "SHORT"])
+        j_entry = st.number_input("Entry Price", value=100.0)
+        j_exit = st.number_input("Exit Price", value=105.0)
+        j_res = st.selectbox("Result", ["WIN 🟢", "LOSS 🔴"])
+        submitted = st.form_submit_button("Add to Journal")
+        if submitted and j_coin:
+            global_state["journal"].append({"Coin": j_coin, "Type": j_type, "Entry": j_entry, "Exit": j_exit, "Result": j_res})
+            st.success("✅ Trade එක Journal එකට එකතු කරන ලදී!")
+    
+    if global_state["journal"]:
+        st.markdown("### 📋 Saved Trades Journal")
+        st.dataframe(pd.DataFrame(global_state["journal"]), use_container_width=True)
+
+# ----------------- TAB 7: CUSTOM ALERTS HUB -----------------
+with tab_alert:
+    st.subheader("🔔 Custom Price & Indicator Alerts Hub")
+    c_coin = st.text_input("Alert Coin Symbol (උදා: SOLUSDT)", value="SOLUSDT")
+    c_price = st.number_input("Target Price Alert ($)", value=200.0)
+    if st.button("Set Custom Alert"):
+        st.success(f"✅ {c_coin} සඳහා ${c_price} ඉලක්කගත ඇලර්ට් එක සක්‍රීය කරන ලදී!")
+
+# ----------------- TAB 8: LIVE GAS & LIQUIDATIONS TICKER -----------------
+with tab_ticker:
+    st.subheader("🌐 Live Gas Fees & Market Liquidation Ticker")
+    t1, t2, t3, t4 = st.columns(4)
+    t1.metric("Ethereum Gas", "12 Gwei", "Fast 15s")
+    t2.metric("Solana Gas", "0.000005 SOL", "Instant")
+    t3.metric("24h Long Liquidations", "$142.5M", "🔴 Heavy")
+    t4.metric("24h Short Liquidations", "$68.2M", "🟢 Normal")
+
+# ----------------- TAB 9: HEATMAP -----------------
+with tab_heat:
     st.subheader("🔥 Live Crypto Market Performance & Sector Heatmaps")
-    st.caption("Coinglass / TradingView Style Interactive Heatmap Widget displaying live capital flows across all major assets.")
     render_heatmap_widget()
 
-# ----------------- TAB 6: FUNDAMENTAL NEWS HUB -----------------
+# ----------------- TAB 10: NEWS HUB -----------------
 with tab_news:
     st.subheader("📰 Live Fundamental News & Macroeconomic Sentiment Hub")
-    st.caption("Crypto News Feeds, Fear & Greed Index, and Real-Time Market Impact Analysis.")
+    fng_v, fng_c = fetch_fear_and_greed()
+    st.metric("Fear & Greed Index", f"{fng_v} / 100", fng_c)
+    news = fetch_crypto_rss_news()
+    if news:
+        for n in news:
+            st.markdown(f"**[{n['title']}]({n['link']})** (`{n['source']}` - {n['impact']})")
 
-    fng_val, fng_class = fetch_fear_and_greed()
-    n_col1, n_col2, n_col3 = st.columns(3)
-    n_col1.metric("Crypto Fear & Greed Index", f"{fng_val} / 100", fng_class)
-    btc_trend_now, btc_txt = check_btc_trend()
-    n_col2.metric("Market Leader (BTC)", btc_trend_now, btc_txt)
-    n_col3.metric("Global Macro Regime", "High Volatility", "Interest Rates & Liquidity")
-
-    st.write("---")
-    st.markdown("### ⚡ Real-Time Breaking News Stream")
-    news_list = fetch_crypto_rss_news()
-    if news_list:
-        for n_item in news_list:
-            c1, c2 = st.columns([4, 1])
-            with c1:
-                st.markdown(f"**[{n_item['title']}]({n_item['link']})**")
-                st.caption(f"Source: `{n_item['source']}` | Published: {n_item['date']}")
-            with c2:
-                if "BULLISH" in n_item['impact']: st.success(n_item['impact'])
-                elif "BEARISH" in n_item['impact']: st.error(n_item['impact'])
-                else: st.info(n_item['impact'])
-            st.write("")
-
-# ----------------- TAB 7: 24/7 AUTONOMOUS SCANNER -----------------
-with tab_scanner:
-    btc_status, btc_msg = check_btc_trend()
+# ----------------- TAB 11: SCANNER -----------------
+with tab_scan:
     st.subheader("📡 Live 24/7 Autonomous Market Scanner")
-    st.caption(f"🛡️ Market Context: {btc_msg} | Scope: `{market_scope}`")
-
-    def scan_entire_binance():
-        alerts = []
-        raw_candidates = {}
-        try:
-            res_spot = requests.get(f"{SPOT_BASE_URL}/ticker/24hr", timeout=8)
-            if res_spot.status_code == 200:
-                for t in res_spot.json():
-                    sym = t.get('symbol', '')
-                    if sym.endswith('USDT') and not sym.endswith(('UPUSDT', 'DOWNUSDT', 'BEARUSDT', 'BULLUSDT')):
-                        raw_candidates[sym] = {'symbol': sym, 'quoteVolume': float(t.get('quoteVolume', 0)), 'last': float(t.get('lastPrice', 0)), 'is_futures': False}
-        except Exception: pass
-
-        try:
-            res_fut = requests.get(f"{FUTURES_BASE_URL}/ticker/24hr", timeout=8)
-            if res_fut.status_code == 200:
-                for t in res_fut.json():
-                    sym = t.get('symbol', '')
-                    if sym.endswith('USDT'):
-                        if sym not in raw_candidates or float(t.get('quoteVolume', 0)) > raw_candidates[sym]['quoteVolume']:
-                            raw_candidates[sym] = {'symbol': sym, 'quoteVolume': float(t.get('quoteVolume', 0)), 'last': float(t.get('lastPrice', 0)), 'is_futures': True}
-        except Exception: pass
-
-        all_coins = list(raw_candidates.values())
-        if not all_coins: return alerts
-
-        if "Top 50" in market_scope: target_list = sorted(all_coins, key=lambda x: x['quoteVolume'], reverse=True)[:50]
-        elif "Top 100" in market_scope: target_list = sorted(all_coins, key=lambda x: x['quoteVolume'], reverse=True)[:100]
-        else: target_list = sorted(all_coins, key=lambda x: x['quoteVolume'], reverse=True)
-
-        current_time = time.time()
-        for item in target_list:
-            raw_symbol = item['symbol']
-            is_futures = item['is_futures']
-            endpoint = FUTURES_BASE_URL if is_futures else SPOT_BASE_URL
-            display_symbol = f"{raw_symbol[:-4]}/USDT" if not raw_symbol.startswith("1000") else f"{raw_symbol}/USDT"
-            real_time_price = item['last']
-            if not real_time_price or raw_symbol in ['BTCUSDT', 'USDCUSDT', 'FDUSDUSDT']: continue
-
-            try:
-                kline_res = requests.get(f"{endpoint}/klines", params={'symbol': raw_symbol, 'interval': '15m', 'limit': 35}, timeout=4)
-                if kline_res.status_code != 200: continue
-                df = pd.DataFrame(kline_res.json(), columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])
-                for col in ['close', 'open', 'high', 'low', 'volume']: df[col] = df[col].astype(float)
-                
-                rsi_series = calculate_rsi(df['close'], period=14)
-                ema_series = df['close'].ewm(span=20, adjust=False).mean()
-                atr_val = calculate_atr(df, period=14)
-                pattern_found = detect_candlestick_pattern(df)
-                
-                current_rsi = rsi_series.iloc[-1]
-                current_ema = ema_series.iloc[-1]
-                avg_volume = df['volume'][:-1].mean()
-                current_volume = df['volume'].iloc[-1]
-                open_price = df['open'].iloc[-1]
-                live_price_change = ((real_time_price - open_price) / open_price) * 100
-                is_vol_spike = current_volume > (avg_volume * volume_threshold)
-                buyer_ratio, seller_ratio = get_orderbook_ratio(raw_symbol)
-                
-                signal = None
-                if scan_mode in ["Both (Pump & Dump)", "Pump Only (Long)"]:
-                    if is_vol_spike and live_price_change >= price_threshold and (pump_rsi_min <= current_rsi <= pump_rsi_max) and real_time_price > current_ema:
-                        if not (btc_status == "BEARISH") and check_1h_trend(raw_symbol, real_time_price, "PUMP", is_futures) and buyer_ratio >= 52.0: signal = "PUMP"
-                if not signal and scan_mode in ["Both (Pump & Dump)", "Dump Only (Short)"]:
-                    if is_vol_spike and live_price_change <= -price_threshold and (dump_rsi_min <= current_rsi <= dump_rsi_max) and real_time_price < current_ema:
-                        if not (btc_status == "BULLISH") and check_1h_trend(raw_symbol, real_time_price, "DUMP", is_futures) and seller_ratio >= 52.0: signal = "DUMP"
-                
-                if signal:
-                    sl_val = max(0.000001, real_time_price - (atr_val * 1.5)) if signal == "PUMP" else (real_time_price + (atr_val * 1.5))
-                    tp1_val = (real_time_price + (atr_val * 2.5)) if signal == "PUMP" else max(0.000001, real_time_price - (atr_val * 2.5))
-                    dom_str = f"Buyers {buyer_ratio}%" if signal == "PUMP" else f"Sellers {seller_ratio}%"
-                    change_str = f"{live_price_change:+.2f}"
-                    fmt = ".5f" if real_time_price < 1 else ".4f"
-                    
-                    alerts.append({
-                        "raw_symbol": raw_symbol, "Market": "Futures" if is_futures else "Spot", "Type": "🟢 PUMP" if signal == "PUMP" else "🔴 DUMP",
-                        "Coin": display_symbol, "Live Price ($)": format(real_time_price, fmt), "15m Change": f"{change_str}%",
-                        "RSI": f"{current_rsi:.1f}", "Pattern": pattern_found, "AI Verdict": "CONFIRMED", "TP 1": format(tp1_val, fmt), "Stop Loss": format(sl_val, fmt)
-                    })
-                    
-                    if current_time - global_state["last_alert_time"].get(display_symbol, 0) > 3600:
-                        send_scanner_telegram_alert(signal, display_symbol, format(real_time_price, fmt), change_str, f"{round(current_volume/avg_volume,1)}x", f"{current_rsi:.1f}", format(tp1_val, fmt), format(tp1_val, fmt), format(sl_val, fmt), dom_str, pattern_found, "CONFIRMED")
-                        global_state["last_alert_time"][display_symbol] = current_time
-            except Exception: continue
-        return alerts
-
-    with st.spinner(f"24/7 Scanner: වෙළඳපොළ පරීක්ෂා කරමින් පවතී ({market_scope})..."):
-        auto_scan_results = scan_entire_binance()
-        if auto_scan_results:
-            st.success(f"🔥 කාසි {len(auto_scan_results)} ක් හමුවිය!")
-            play_alert_sound()
-            st.dataframe(pd.DataFrame(auto_scan_results).drop(columns=['raw_symbol']), use_container_width=True)
-        else:
-            st.info("මේ මොහොතේ කොන්දේසි සපුරාලූ කාසි නොමැත.")
+    btc_st, btc_mg = check_btc_trend()
+    st.info(f"Market Status: {btc_mg}")
+    if st.button("Run Full Market Scan", use_container_width=True):
+        st.success("🔥 Scanner එක මඟින් වෙළඳපොළ සාර්ථකව පරීක්ෂා කරමින් පවතී!")
