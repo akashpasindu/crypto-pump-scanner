@@ -8,7 +8,7 @@ import html
 import time
 import xml.etree.ElementTree as ET
 
-st.set_page_config(page_title="Complete Institutional Terminal & Auto-Divergence Tracker", layout="wide")
+st.set_page_config(page_title="Institutional Terminal & Instant Scalp Generator", layout="wide")
 
 # ================= CONFIGURATION =================
 TELEGRAM_BOT_TOKEN = "8277509351:AAFgtRQ6jNApDmGjaZ4ARbqAHIu7us_MACk"
@@ -76,21 +76,19 @@ def send_theory_telegram_alert(coin, plan):
     orderbook = plan.get('orderbook', 'N/A')
 
     msg_html = (
-        f"🏛️ <b>Institutional Complete Trade Setup & Indicators</b>\n\n"
+        f"⚡ <b>INSTANT SCALP FULL SIGNAL CARD</b>\n\n"
         f"🪙 <b>Coin:</b> <code>{coin}</code>\n"
-        f"🎯 <b>Final Verdict:</b> {icon} <b>{direction_val}</b> | <b>Score:</b> <code>{plan.get('confidence', 80)}%</code>\n"
+        f"🎯 <b>Verdict:</b> {icon} <b>{direction_val}</b> | <b>Score:</b> <code>{plan.get('confidence', 85)}%</code>\n"
         f"📈 <b>RSI (14):</b> <code>{rsi_val} / 100</code> | <b>Order Book:</b> {orderbook}\n"
         f"📊 <b>Derivatives:</b> OI: <code>{oi_txt}</code> | Funding: <code>{funding_txt}</code>\n"
-        f"🐋 <b>Whale Liq Pool (50x):</b> <code>{liq_50x}</code>\n"
-        f"⚙️ <b>Leverage:</b> <code>{plan.get('leverage', '3x - 5x')}</code> | <b>R:R:</b> <code>{plan.get('risk_reward', '1:3')}</code>\n\n"
+        f"⚙️ <b>Leverage:</b> <code>{plan.get('leverage', '5x - 10x')}</code> | <b>R:R:</b> <code>{plan.get('risk_reward', '1:2.8')}</code>\n\n"
         f"📥 <b>Entry Zone:</b> <code>${plan.get('entry_zone', 'Market')}</code>\n"
         f"🛑 <b>Stop Loss:</b> <code>${plan.get('stop_loss', 'N/A')}</code>\n\n"
-        f"🎯 <b>Targets:</b>\n"
+        f"🎯 <b>Scalp Targets:</b>\n"
         f"  ├ TP 1: <code>${plan.get('tp1', 'N/A')}</code>\n"
         f"  ├ TP 2: <code>${plan.get('tp2', 'N/A')}</code>\n"
         f"  └ TP 3: <code>${plan.get('tp3', 'N/A')}</code>\n\n"
-        f"🧠 <b>භාවිතා කළ Concepts වල හේතු සාරාංශය:</b>{reasons_text}\n\n"
-        f"📝 <b>Thesis:</b> {summary_clean}\n\n"
+        f"🧠 <b>Scalp Thesis:</b> {summary_clean}\n\n"
         f"🔗 <a href='https://www.binance.com/en/trade/{clean_symbol}'>Trade on Binance</a>"
     )
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -343,7 +341,7 @@ def compute_institutional_trade_setup(symbol_resolved, current_price, mtf_data, 
         active_tp2 = format(tp2_l, fmt)
         active_tp3 = format(tp3_l, fmt)
         active_rr = "1:2.8"
-        active_lev = "2x - 3x" if is_brand_new else ("5x - 10x" if confidence >= 75 else "3x - 5x")
+        active_lev = "5x - 10x"
     else:
         active_entry = f"{format(current_price * 1.004, fmt)} - {format(current_price * 0.997, fmt)}"
         active_sl = format(sl_short, fmt)
@@ -351,7 +349,7 @@ def compute_institutional_trade_setup(symbol_resolved, current_price, mtf_data, 
         active_tp2 = format(tp2_s, fmt)
         active_tp3 = format(tp3_s, fmt)
         active_rr = "1:2.6"
-        active_lev = "2x - 3x" if is_brand_new else "3x - 5x"
+        active_lev = "3x - 5x"
 
     mtf_lines = [f"• <b>{tf_key.upper()}:</b> {d['status']} (RSI: {d['rsi']})" for tf_key, d in mtf_data.items()]
     mtf_summary = "\n".join(mtf_lines)
@@ -360,15 +358,11 @@ def compute_institutional_trade_setup(symbol_resolved, current_price, mtf_data, 
     for th in selected_theories:
         short_t = th.split("—")[0].strip()
         if "RSI" in short_t:
-            reason = f"RSI (14) අගය {rsi_val} මඟින් මොමෙන්ටම් තත්ත්වය සහ වෙළඳපොළ Overbought/Oversold කලාපය මනාව පෙන්වා දෙයි."
+            reason = f"RSI (14) අගය {rsi_val} මඟින් මොමෙන්ටම් තත්ත්වය සහ Scalp පිවිසුම සනාථ කරයි."
         elif "Smart Money" in short_t:
-            reason = f"Liquidity Sweep සහ Order Block මඟින් Whales ලාගේ පිවිසුම් ලක්ෂ්‍යය සනාථ වේ. 50x Liq Zone: ${format(liq_50x_short, fmt)}."
-        elif "Wyckoff" in short_t:
-            reason = f"Open Interest ({derivatives['oi_value']}) සමඟ Volume Flow සැසඳීමේදී Accumulation/Distribution තත්ත්වය තහවුරු වේ."
-        elif "Dow" in short_t:
-            reason = f"වෙළඳපොළ ව්‍යුහය (Market Structure) පරීක්ෂා කළ විට {'Higher Highs (Bullish BOS)' if is_long_priority else 'Lower Lows (Bearish CHoCH)'} සනාථ වේ."
+            reason = f"Liquidity Sweep සහ Order Block මත Scalping සඳහා කදිම අවස්ථාවකි. Liq Zone: ${format(liq_50x_short, fmt)}."
         else:
-            reason = f"මෙම න්‍යාය මඟින් වත්මන් මිල ක්‍රියාකාරිත්වය සහ ඇනලයිස් දිශාව ({final_direction}) එකිනෙකට එකඟ වන බව තහවුරු කරයි."
+            reason = f"මෙම න්‍යාය මඟින් වත්මන් මිල ක්‍රියාකාරිත්වය සහ Scalp දිශාව ({final_direction}) එකිනෙකට එකඟ වන බව තහවුරු කරයි."
         theory_findings.append({"theory": short_t, "why_reason": reason})
 
     return {
@@ -378,8 +372,8 @@ def compute_institutional_trade_setup(symbol_resolved, current_price, mtf_data, 
         "rsi_val": rsi_val, "orderbook": orderbook_str,
         "theories_evaluated": [t.split("—")[0].strip() for t in selected_theories],
         "theory_breakdown": theory_findings,
-        "summary": f"RSI ({rsi_val}), Order Book ({orderbook_str}) සහ Confluence මඟින් {final_direction} තහවුරු වේ.",
-        "invalidation": f"මිල ${format(sl_long, fmt)} ට වඩා පහළින් ගියහොත් Setup එක Invalid වේ." if is_long_priority else f"මිල ${format(sl_short, fmt)} ට වඩා ඉහළින් ගියහොත් Invalid වේ.",
+        "summary": f"RSI ({rsi_val}), Order Book ({orderbook_str}) සහ Scalp Confluence මඟින් {final_direction} තහවුරු වේ.",
+        "invalidation": f"මිල ${format(sl_long, fmt)} ට වඩා පහළින් ගියහොත් Scalp Setup එක Invalid වේ." if is_long_priority else f"මිල ${format(sl_short, fmt)} ට වඩා ඉහළින් ගියහොත් Invalid වේ.",
         "mtf_summary": mtf_summary, "is_brand_new": is_brand_new, "derivatives": derivatives,
         "long_plan": {"entry": f"{format(current_price * 0.996, fmt)} - {format(current_price * 1.003, fmt)}", "sl": format(sl_long, fmt), "tp1": format(tp1_l, fmt), "tp2": format(tp2_l, fmt), "tp3": format(tp3_l, fmt), "rr": "1:2.8"},
         "short_plan": {"entry": f"{format(current_price * 1.004, fmt)} - {format(current_price * 0.997, fmt)}", "sl": format(sl_short, fmt), "tp1": format(tp1_s, fmt), "tp2": format(tp2_s, fmt), "tp3": format(tp3_s, fmt), "rr": "1:2.6"}
@@ -437,8 +431,9 @@ def check_1h_trend(raw_symbol, current_price, signal_type, is_futures=False):
         return True
 
 # ================= TABS NAVIGATION =================
-tab_theory, tab_div, tab_heatmap, tab_news, tab_scanner = st.tabs([
+tab_theory, tab_scalp_gen, tab_div, tab_heatmap, tab_news, tab_scanner = st.tabs([
     "🏛️ Universal Coin & Indicators", 
+    "⚡ Instant Scalp Signal Generator",
     "📊 Auto Divergence Tracker",
     "🔥 Live Heatmaps & Sectors",
     "📰 Fundamental News Hub", 
@@ -600,7 +595,61 @@ with tab_theory:
         }
         st.dataframe(pd.DataFrame(dual_data), use_container_width=True, hide_index=True)
 
-# ----------------- TAB 2: AUTO DIVERGENCE TRACKER -----------------
+# ----------------- TAB 2: INSTANT SCALP SIGNAL GENERATOR -----------------
+with tab_scalp_gen:
+    st.subheader("⚡ Instant Scalp Signal Generator & Top Coins Hub")
+    st.caption("ಈ මොහොතේ ස්කැල්ප් කිරීමට හොඳම (High Momentum & Volume Spike) කොයින් ස්වයංක්‍රීයව සොයා Full Signal Card එකක් සාදා දෙයි.")
+
+    if st.button("🚀 Find Best Scalp Coins & Generate Full Signals", use_container_width=True):
+        with st.spinner("Binance වෙළඳපොළ සෝදිසි කරමින් හොඳම Scalp Coins සොයමින් පවතී..."):
+            try:
+                res_spot = requests.get(f"{SPOT_BASE_URL}/ticker/24hr", timeout=8)
+                if res_spot.status_code == 200:
+                    top_vol = sorted([t for t in res_spot.json() if t.get('symbol', '').endswith('USDT') and not t.get('symbol', '').endswith(('UPUSDT', 'DOWNUSDT'))], key=lambda x: float(x.get('quoteVolume', 0)), reverse=True)[:30]
+                    
+                    scalp_opportunities = []
+                    for item in top_vol:
+                        sym = item['symbol']
+                        disp = f"{sym[:-4]}/USDT"
+                        k_res = requests.get(f"{SPOT_BASE_URL}/klines", params={'symbol': sym, 'interval': '15m', 'limit': 20}, timeout=3)
+                        if k_res.status_code == 200:
+                            candles = k_res.json()
+                            df = pd.DataFrame(candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])
+                            for col in ['close', 'open', 'high', 'low', 'volume']: df[col] = df[col].astype(float)
+                            
+                            rsi_s = calculate_rsi(df['close'], period=14)
+                            cur_rsi = rsi_s.iloc[-1]
+                            cur_p = df['close'].iloc[-1]
+                            chg = ((cur_p - df['open'].iloc[-1]) / df['open'].iloc[-1]) * 100
+                            
+                            if abs(chg) >= 1.0 and (40 <= cur_rsi <= 75):
+                                scalp_opportunities.append({"symbol": sym, "disp": disp, "price": cur_p, "rsi": cur_rsi, "chg": chg})
+                    
+                    if scalp_opportunities:
+                        st.success(f"🔥 හොඳම Scalp අවස්ථා {len(scalp_opportunities)} ක් හමුවිය!")
+                        for s_item in scalp_opportunities[:5]:
+                            with st.expander(f"📌 Scalp Setup: {s_item['disp']} | Change: {s_item['chg']:+.2f}% | RSI: {s_item['rsi']}", expanded=True):
+                                mtf_f, is_new = fetch_universal_adaptive_data(s_item['symbol'], False)
+                                deriv_f = fetch_derivatives_intelligence(s_item['symbol'])
+                                b_p, s_p = get_orderbook_ratio(s_item['symbol'])
+                                ob_str = f"🟢 Buyers {b_p}% / 🔴 Sellers {s_p}%"
+                                
+                                scalp_plan = compute_institutional_trade_setup(s_item['symbol'], s_item['price'], mtf_f, ob_str, ALL_THEORIES[:3], is_new, deriv_f, s_item['rsi'])
+                                
+                                st.write(f"**Entry Zone:** ${scalp_plan['entry_zone']} | **Stop Loss:** ${scalp_plan['stop_loss']}")
+                                st.write(f"**Targets:** TP1: ${scalp_plan['tp1']} | TP2: ${scalp_plan['tp2']} | TP3: ${scalp_plan['tp3']}")
+                                st.info(scalp_plan['summary'])
+                                
+                                if st.button(f"📲 Send {s_item['disp']} Scalp Signal to Telegram", key=s_item['symbol']):
+                                    res_t = send_theory_telegram_alert(s_item['disp'], scalp_plan)
+                                    if res_t.status_code == 200:
+                                        st.success(f"✅ {s_item['disp']} Scalp Signal එක Telegram වෙත යවන ලදී!")
+                    else:
+                        st.warning("මෙම මොහොතේ නිශ්චිත Scalp කොන්දේසි සපුරාලූ කාසි නොමැත. නැවත උත්සාහ කරන්න.")
+            except Exception as ex:
+                st.error(f"Error: {ex}")
+
+# ----------------- TAB 3: AUTO DIVERGENCE TRACKER -----------------
 with tab_div:
     st.subheader("📊 Live Auto-Tracking RSI Divergence Detector")
     st.caption("වෙළඳපොළේ සියලුම ප්‍රධාන කාසි ස්වයංක්‍රීයව ස්කෑන් කර හැරවුම් ලක්ෂ්‍ය (Bullish & Bearish Divergences) තත්‍ය කාලීනව ලුහුබඳියි.")
@@ -643,13 +692,13 @@ with tab_div:
             else:
                 st.info("මෙම මොහොතේ ප්‍රබල Divergence සංඥා කිසිවක් හමු නොවීය.")
 
-# ----------------- TAB 3: LIVE HEATMAPS & SECTORS -----------------
+# ----------------- TAB 4: LIVE HEATMAPS & SECTORS -----------------
 with tab_heatmap:
     st.subheader("🔥 Live Crypto Market Performance & Sector Heatmaps")
     st.caption("Coinglass / TradingView Style Interactive Heatmap Widget displaying live capital flows across all major assets.")
     render_heatmap_widget()
 
-# ----------------- TAB 4: FUNDAMENTAL NEWS HUB -----------------
+# ----------------- TAB 5: FUNDAMENTAL NEWS HUB -----------------
 with tab_news:
     st.subheader("📰 Live Fundamental News & Macroeconomic Sentiment Hub")
     st.caption("Crypto News Feeds, Fear & Greed Index, and Real-Time Market Impact Analysis.")
@@ -676,7 +725,7 @@ with tab_news:
                 else: st.info(n_item['impact'])
             st.write("")
 
-# ----------------- TAB 5: 24/7 AUTONOMOUS SCANNER -----------------
+# ----------------- TAB 6: 24/7 AUTONOMOUS SCANNER -----------------
 with tab_scanner:
     btc_status, btc_msg = check_btc_trend()
     st.subheader("📡 Live 24/7 Autonomous Market Scanner")
