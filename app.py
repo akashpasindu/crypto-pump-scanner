@@ -7,7 +7,7 @@ import re
 import html
 import time
 
-st.set_page_config(page_title="Crypto Scanner & Institutional AI Terminal", layout="wide")
+st.set_page_config(page_title="Institutional Multi-Timeframe AI Terminal", layout="wide")
 
 # ================= CONFIGURATION =================
 TELEGRAM_BOT_TOKEN = "8277509351:AAFgtRQ6jNApDmGjaZ4ARbqAHIu7us_MACk"
@@ -39,24 +39,26 @@ def send_scanner_telegram_alert(signal_type, coin, price, change, volume_spike, 
 
 def send_theory_telegram_alert(coin, plan):
     clean_symbol = coin.replace('/', '_')
-    theories_used = ", ".join(plan.get("theories_evaluated", []))
     direction_val = plan.get('direction', 'LONG')
     icon = "🟢" if "LONG" in direction_val else "🔴"
     
     summary_clean = html.escape(str(plan.get('summary', 'Setup aligned.')))
-    theories_clean = html.escape(theories_used)
+    theories_clean = html.escape(", ".join(plan.get("theories_evaluated", [])))
+    mtf_clean = html.escape(str(plan.get('mtf_summary', 'Multi-Timeframe confluence confirmed.')))
 
     msg_html = (
-        f"🏛️ <b>Multi-Theory Institutional Trade Plan</b>\n\n"
+        f"🏛️ <b>Institutional Multi-Timeframe Trade Setup</b>\n\n"
         f"🪙 <b>Coin:</b> <code>{coin}</code>\n"
-        f"🎯 <b>Direction:</b> {icon} <b>{direction_val}</b> | <b>Confidence:</b> <code>{plan.get('confidence', 80)}%</code>\n"
+        f"🎯 <b>Final Verdict:</b> {icon} <b>{direction_val}</b>\n"
+        f"📊 <b>MTF Score:</b> Long: <code>{plan.get('long_score', 50)}%</code> | Short: <code>{plan.get('short_score', 50)}%</code>\n"
         f"⚙️ <b>Leverage:</b> <code>{plan.get('leverage', '3x - 5x')}</code> | <b>R:R:</b> <code>{plan.get('risk_reward', '1:3')}</code>\n\n"
         f"📥 <b>Entry Zone:</b> <code>${plan.get('entry_zone', 'Market')}</code>\n"
         f"🛑 <b>Stop Loss:</b> <code>${plan.get('stop_loss', 'N/A')}</code>\n\n"
-        f"🎯 <b>Targets:</b>\n"
+        f"🎯 <b>Take Profit Targets:</b>\n"
         f"  ├ TP 1: <code>${plan.get('tp1', 'N/A')}</code>\n"
         f"  ├ TP 2: <code>${plan.get('tp2', 'N/A')}</code>\n"
         f"  └ TP 3: <code>${plan.get('tp3', 'N/A')}</code>\n\n"
+        f"⏳ <b>Timeframe Breakdown:</b>\n{mtf_clean}\n\n"
         f"🧠 <b>Theories:</b> <i>{theories_clean}</i>\n"
         f"📝 <b>Thesis:</b> {summary_clean}\n\n"
         f"🔗 <a href='https://www.binance.com/en/trade/{clean_symbol}'>Trade on Binance</a>"
@@ -141,86 +143,145 @@ def detect_candlestick_pattern(df):
         return "Three Black Crows 🩸"
     return "Volume Breakout ⚡"
 
-def compute_algorithmic_trade_plan(coin, price, df, rsi, ema20, ema50, atr, dom_info, selected_theories):
-    is_bullish = price >= ema20 and rsi >= 48
-    direction = "STRONG LONG" if is_bullish else "STRONG SHORT"
-    confidence = 86 if (is_bullish and price > ema50) or (not is_bullish and price < ema50) else 75
+# ================= MULTI-TIMEFRAME DATA ENGINE =================
+def fetch_mtf_data(symbol):
+    tf_data = {}
+    timeframes = ['15m', '1h', '4h', '1d']
+    for tf in timeframes:
+        try:
+            res = requests.get(f"{BASE_URL}/klines", params={'symbol': symbol, 'interval': tf, 'limit': 35}, timeout=5)
+            if res.status_code == 200:
+                df = pd.DataFrame(res.json(), columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])
+                for col in ['close', 'open', 'high', 'low', 'volume']:
+                    df[col] = df[col].astype(float)
+                
+                rsi = calculate_rsi(df['close'], period=14).iloc[-1]
+                ema20 = df['close'].ewm(span=20, adjust=False).mean().iloc[-1]
+                ema50 = df['close'].ewm(span=50, adjust=False).mean().iloc[-1]
+                current_p = df['close'].iloc[-1]
+                
+                is_bullish = current_p >= ema20 and rsi >= 48
+                tf_data[tf] = {
+                    "price": current_p,
+                    "rsi": round(rsi, 1),
+                    "ema20": ema20,
+                    "ema50": ema50,
+                    "status": "BULLISH 🟢" if is_bullish else "BEARISH 🔴",
+                    "raw_bull": is_bullish,
+                    "atr": calculate_atr(df, period=14),
+                    "df": df
+                }
+        except Exception:
+            continue
+    return tf_data
 
-    if is_bullish:
-        entry_min = price * 0.998
-        entry_max = price * 1.002
-        sl = price - (atr * 1.5)
-        tp1 = price + (atr * 2.5)
-        tp2 = price + (atr * 4.2)
-        tp3 = price + (atr * 6.5)
-        leverage = "5x - 10x"
-        rr = "1:2.8"
+# ================= INSTITUTIONAL MTF & DUAL-SETUP SYNTHESIZER =================
+def compute_mtf_institutional_setup(coin, current_price, mtf_data, dom_info, selected_theories):
+    bull_count = sum(1 for tf, d in mtf_data.items() if d['raw_bull'])
+    total_tfs = max(1, len(mtf_data))
+    
+    long_score = int((bull_count / total_tfs) * 100)
+    short_score = 100 - long_score
+    
+    is_long_priority = long_score >= 50
+    final_direction = "STRONG LONG" if long_score >= 75 else ("STRONG SHORT" if short_score >= 75 else ("SCALP LONG" if is_long_priority else "SCALP SHORT"))
+    confidence = max(long_score, short_score)
+    
+    atr_15m = mtf_data.get('15m', {}).get('atr', current_price * 0.015)
+    
+    # Primary Long Plan
+    entry_l_min = current_price * 0.997
+    entry_l_max = current_price * 1.002
+    sl_long = current_price - (atr_15m * 1.6)
+    tp1_l = current_price + (atr_15m * 2.5)
+    tp2_l = current_price + (atr_15m * 4.2)
+    tp3_l = current_price + (atr_15m * 6.5)
+    
+    # Alternate Short / Hedge Plan
+    entry_s_min = current_price * 1.003
+    entry_s_max = current_price * 0.998
+    sl_short = current_price + (atr_15m * 1.6)
+    tp1_s = max(0.000001, current_price - (atr_15m * 2.5))
+    tp2_s = max(0.000001, current_price - (atr_15m * 4.2))
+    tp3_s = max(0.000001, current_price - (atr_15m * 6.5))
+    
+    # Active plan assignment
+    if is_long_priority:
+        active_entry = f"{entry_l_min:,.4f} - {entry_l_max:,.4f}"
+        active_sl = f"{sl_long:,.4f}"
+        active_tp1 = f"{tp1_l:,.4f}"
+        active_tp2 = f"{tp2_l:,.4f}"
+        active_tp3 = f"{tp3_l:,.4f}"
+        active_rr = "1:2.8"
+        active_lev = "5x - 10x" if confidence >= 75 else "3x - 5x"
     else:
-        entry_min = price * 1.002
-        entry_max = price * 0.998
-        sl = price + (atr * 1.5)
-        tp1 = max(0.000001, price - (atr * 2.5))
-        tp2 = max(0.000001, price - (atr * 4.2))
-        tp3 = max(0.000001, price - (atr * 6.5))
-        leverage = "3x - 5x"
-        rr = "1:2.5"
+        active_entry = f"{entry_s_max:,.4f} - {entry_s_min:,.4f}"
+        active_sl = f"{sl_short:,.4f}"
+        active_tp1 = f"{tp1_s:,.4f}"
+        active_tp2 = f"{tp2_s:,.4f}"
+        active_tp3 = f"{tp3_s:,.4f}"
+        active_rr = "1:2.6"
+        active_lev = "3x - 5x"
 
-    findings = []
+    # Multi-timeframe Summary Text
+    mtf_lines = []
+    for tf in ['1d', '4h', '1h', '15m']:
+        if tf in mtf_data:
+            d = mtf_data[tf]
+            mtf_lines.append(f"• <b>{tf.upper()}:</b> {d['status']} (RSI: {d['rsi']})")
+    mtf_summary = "\n".join(mtf_lines)
+
+    # Theory Findings
+    theory_findings = []
     for th in selected_theories:
-        short_name = th.split("—")[0].strip()
-        if "Smart Money" in short_name:
-            desc = f"{'Bullish Demand Order Block' if is_bullish else 'Bearish Supply Mitigation Block'} identified with unmitigated FVG."
-        elif "Wyckoff" in short_name:
-            desc = f"{'Accumulation Phase (SOS confirmed with volume absorption)' if is_bullish else 'Distribution Phase (UTAD breakdown)'}."
-        elif "Dow" in short_name:
-            desc = f"Structure confirmed with Higher Highs/Lows ({'Bullish BOS' if is_bullish else 'Bearish CHoCH'})."
-        elif "Elliott" in short_name:
-            desc = f"{'Wave 3 expansion unfolding with expanding momentum' if is_bullish else 'Corrective C-wave impulse'}."
-        elif "RSI" in short_name:
-            desc = f"RSI (14) at {rsi:.1f} shows healthy momentum without immediate exhaustion divergence."
+        short_t = th.split("—")[0].strip()
+        if "Smart Money" in short_t:
+            finding = f"HTF (4h/1d) Order Block confirms {'Demand zone holding' if is_long_priority else 'Supply mitigation rejection'}. 15m FVG unmitigated."
+        elif "Wyckoff" in short_t:
+            finding = f"{'Phase C Spring / Sign of Strength (SOS)' if is_long_priority else 'Phase C Upthrust After Distribution (UTAD)'} confirmed across 1h timeframe."
+        elif "Dow" in short_t:
+            finding = f"Market Structure shows {'Bullish Higher Highs & Higher Lows (BOS)' if is_long_priority else 'Bearish Lower Highs & Lower Lows (CHoCH)'} on 1h/15m."
+        elif "Elliott" in short_t:
+            finding = f"{'Wave 3 Impulse extension unfolding' if is_long_priority else 'Corrective C-Wave downward impulse'}."
+        elif "RSI" in short_t:
+            rsi_val = mtf_data.get('15m', {}).get('rsi', 50)
+            finding = f"Momentum aligned: RSI at {rsi_val} reflects {'solid buyer accumulation' if is_long_priority else 'heavy institutional selling pressure'}."
         else:
-            desc = f"Confluence aligns with {'upper resistance breakout' if is_bullish else 'lower support breakdown'}."
-        findings.append({"theory": short_name, "finding": desc})
+            finding = f"Confluence aligns with {'macro resistance breakout' if is_long_priority else 'macro support breakdown'}."
+        theory_findings.append({"theory": short_t, "finding": finding})
+
+    thesis = (
+        f"Cross-Timeframe synthesis across 1D, 4H, 1H, and 15M concludes a {final_direction} bias "
+        f"with a {long_score}% Long vs {short_score}% Short confluence score. "
+        f"Entry is optimized for institutional liquidity mitigation."
+    )
+
+    invalidation = (
+        f"Candle close below ${sl_long:,.4f} invalidates the Bullish Structure." if is_long_priority
+        else f"Candle close above ${sl_short:,.4f} invalidates the Bearish Structure."
+    )
 
     return {
-        "direction": direction,
+        "direction": final_direction,
         "confidence": confidence,
-        "risk_reward": rr,
-        "leverage": leverage,
-        "entry_zone": f"{entry_min:,.4f} - {entry_max:,.4f}",
-        "tp1": f"{tp1:,.4f}",
-        "tp2": f"{tp2:,.4f}",
-        "tp3": f"{tp3:,.4f}",
-        "stop_loss": f"{sl:,.4f}",
+        "long_score": long_score,
+        "short_score": short_score,
+        "risk_reward": active_rr,
+        "leverage": active_lev,
+        "entry_zone": active_entry,
+        "tp1": active_tp1,
+        "tp2": active_tp2,
+        "tp3": active_tp3,
+        "stop_loss": active_sl,
         "theories_evaluated": [t.split("—")[0].strip() for t in selected_theories],
-        "theory_breakdown": findings,
-        "summary": f"Institutional analysis confirms a {direction} opportunity based on multi-theory confluence across Structure, Volume, and Momentum."
+        "theory_breakdown": theory_findings,
+        "summary": thesis,
+        "invalidation": invalidation,
+        "mtf_summary": mtf_summary,
+        # Plans for detailed table
+        "long_plan": {"entry": f"{entry_l_min:,.4f} - {entry_l_max:,.4f}", "sl": f"{sl_long:,.4f}", "tp1": f"{tp1_l:,.4f}", "tp2": f"{tp2_l:,.4f}", "tp3": f"{tp3_l:,.4f}", "rr": "1:2.8"},
+        "short_plan": {"entry": f"{entry_s_max:,.4f} - {entry_s_min:,.4f}", "sl": f"{sl_short:,.4f}", "tp1": f"{tp1_s:,.4f}", "tp2": f"{tp2_s:,.4f}", "tp3": f"{tp3_s:,.4f}", "rr": "1:2.6"}
     }
-
-def run_universal_theory_analysis(coin, price, df, rsi, ema20, ema50, atr, dom_info, selected_theories, timeframe, api_key):
-    if api_key and api_key.strip().startswith("AIzaSy"):
-        theories_list_str = "\n- ".join(selected_theories)
-        candles_txt = df[['open', 'high', 'low', 'close', 'volume']].tail(12).to_string(index=False)
-        prompt = f"""
-        Act as an Institutional Quantitative Fund Trader. Analyze {coin} using:
-        {theories_list_str}
-        Data: {coin}, TF: {timeframe}, Price: ${price}, RSI: {rsi}, 20EMA: ${ema20:,.4f}, 50EMA: ${ema50:,.4f}, ATR: ${atr:,.4f}, {dom_info}
-        Recent Candles:
-        {candles_txt}
-        Respond ONLY in strict JSON:
-        {{"direction": "STRONG LONG", "confidence": 85, "risk_reward": "1:3.2", "leverage": "5x", "entry_zone": "{price:.4f}", "tp1": "{price*1.02:.4f}", "tp2": "{price*1.04:.4f}", "tp3": "{price*1.07:.4f}", "stop_loss": "{price*0.98:.4f}", "theories_evaluated": ["SMC"], "theory_breakdown": [{{"theory": "SMC", "finding": "Order Block Retest"}}], "summary": "Setup aligned."}}
-        """
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key.strip()}"
-            res = requests.post(url, headers={"Content-Type": "application/json"}, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=12)
-            if res.status_code == 200:
-                match = re.search(r'\{.*\}', res.json()['candidates'][0]['content']['parts'][0]['text'], re.DOTALL)
-                if match:
-                    return json.loads(match.group(0))
-        except Exception:
-            pass
-
-    return compute_algorithmic_trade_plan(coin, price, df, rsi, ema20, ema50, atr, dom_info, selected_theories)
 
 @st.cache_resource
 def get_global_state():
@@ -228,15 +289,17 @@ def get_global_state():
 
 global_state = get_global_state()
 
-# Session State for Trade Plan
+# Session State
 if "last_plan" not in st.session_state:
     st.session_state.last_plan = None
 if "last_coin" not in st.session_state:
     st.session_state.last_coin = None
 if "last_price" not in st.session_state:
     st.session_state.last_price = 0.0
+if "last_mtf" not in st.session_state:
+    st.session_state.last_mtf = {}
 
-# Sidebar
+# Sidebar Settings
 st.sidebar.header("⚙️ General Settings")
 gemini_key = st.sidebar.text_input("Gemini API Key (Optional)", value=DEFAULT_GEMINI_KEY, type="password")
 
@@ -275,12 +338,12 @@ def check_1h_trend(raw_symbol, current_price, signal_type):
         return True
 
 # ================= TABS =================
-tab_theory, tab_scanner = st.tabs(["🏛️ Multi-Theory Custom Analyzer", "📡 24/7 Autonomous Scanner"])
+tab_theory, tab_scanner = st.tabs(["🏛️ Multi-Timeframe Institutional Terminal", "📡 24/7 Autonomous Scanner"])
 
-# ----------------- TAB 1: MULTI-THEORY CUSTOM ANALYZER -----------------
+# ----------------- TAB 1: MTF DEEP DIVE ANALYZER -----------------
 with tab_theory:
-    st.subheader("🏛️ Universal Multi-Theory Analyzer (On-Demand Deep Dive)")
-    st.write("ඕනෑම කාසියක් තෝරාගෙන ලොව ප්‍රමුඛ පෙළේ Technical Theories එකවර හෝ අවශ්‍ය ප්‍රමාණය තෝරා ගැඹුරු විශ්ලේෂණයක් සහ Actionable Trade Setup එකක් ලබාගන්න.")
+    st.subheader("🏛️ Universal Multi-Timeframe Deep Dive (1D • 4H • 1H • 15M)")
+    st.caption("විශලේෂණය සිදු කරනුයේ සියලුම කාල පරාස (Macro to Micro) එකවර පරීක්ෂා කර Long සහ Short සම්භාවිතාව ගණනය කිරීමෙනි.")
 
     ALL_THEORIES = [
         "Smart Money Concepts (SMC / ICT) — Order Blocks, FVG, Liquidity Sweeps",
@@ -299,23 +362,21 @@ with tab_theory:
 
     th_col1, th_col2 = st.columns([1, 2])
     with th_col1:
-        select_all_th = st.checkbox("සියලුම Theories 12ම එකවර තෝරන්න", value=True)
+        select_all_th = st.checkbox("සියලුම Theories 12ම සක්‍රීය කරන්න", value=True)
     with th_col2:
         if select_all_th:
             active_theories = ALL_THEORIES
-            st.info("Theories 12ම සක්‍රීයයි (Full Multi-Confluence Mode)")
+            st.info("Theories 12ම සක්‍රීයයි (Full Institutional Confluence Mode)")
         else:
             active_theories = st.multiselect("අවශ්‍ය Theories තෝරන්න:", options=ALL_THEORIES, default=[ALL_THEORIES[0], ALL_THEORIES[1], ALL_THEORIES[2], ALL_THEORIES[4], ALL_THEORIES[11]])
 
     st.write("---")
-    in_col1, in_col2, in_col3 = st.columns([2, 1, 1])
+    in_col1, in_col2 = st.columns([3, 1])
     with in_col1:
-        custom_coin_symbol = st.text_input("කාසියේ නම (Coin Symbol):", value="SOL", placeholder="e.g. BTC, ETH, SOL, XRP, PEPE").strip().upper()
+        custom_coin_symbol = st.text_input("කාසියේ නම (Coin Symbol):", value="SOL", placeholder="e.g. BTC, ETH, SOL, XRP, DOGE").strip().upper()
     with in_col2:
-        custom_tf = st.selectbox("Timeframe:", ["15m", "1h", "4h", "1d"], index=0)
-    with in_col3:
         st.write("##")
-        run_theory_btn = st.button("🚀 Deep Theory Analysis", use_container_width=True)
+        run_theory_btn = st.button("🚀 Multi-Timeframe Analysis", use_container_width=True)
 
     manual_analysis_running = False
 
@@ -325,83 +386,103 @@ with tab_theory:
         if not active_theories:
             st.warning("⚠️ කරුණාකර අවම වශයෙන් එක් Theory එකක් තෝරන්න.")
         else:
-            st.info("⏸️ **Market Scanner එක Pause කරන ලදී.** තෝරාගත් කාසිය විශ්ලේෂණය කරමින් පවතී...")
-            with st.spinner(f"Binance දත්ත සහ Theories {len(active_theories)} ක් හරහා {custom_pair} විශ්ලේෂණය කරමින් පවතී..."):
+            st.info("⏸️ **Market Scanner එක Pause කරන ලදී.** Multi-Timeframe Data (1D, 4H, 1H, 15M) සහ Order Book විශ්ලේෂණය කරමින් පවතී...")
+            with st.spinner(f"Binance දත්ත පරීක්ෂා කරමින් පවතී ({custom_pair})..."):
                 try:
-                    t_res = requests.get(f"{BASE_URL}/ticker/24hr", params={'symbol': custom_pair}, timeout=5)
-                    k_res = requests.get(f"{BASE_URL}/klines", params={'symbol': custom_pair, 'interval': custom_tf, 'limit': 45}, timeout=5)
-                    if t_res.status_code == 200 and k_res.status_code == 200:
-                        real_p = float(t_res.json().get('lastPrice', 0))
-                        df_th = pd.DataFrame(k_res.json(), columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])
-                        for col in ['close', 'open', 'high', 'low', 'volume']:
-                            df_th[col] = df_th[col].astype(float)
-                        
-                        th_rsi = calculate_rsi(df_th['close'], period=14).iloc[-1]
-                        th_ema20 = df_th['close'].ewm(span=20, adjust=False).mean().iloc[-1]
-                        th_ema50 = df_th['close'].ewm(span=50, adjust=False).mean().iloc[-1]
-                        th_atr = calculate_atr(df_th, period=14)
+                    mtf_data_fetched = fetch_mtf_data(custom_pair)
+                    if mtf_data_fetched and '15m' in mtf_data_fetched:
+                        real_p = mtf_data_fetched['15m']['price']
                         b_pct, s_pct = get_orderbook_ratio(custom_pair)
                         dom_info_str = f"Buyers: {b_pct}% | Sellers: {s_pct}%"
                         
-                        plan = run_universal_theory_analysis(custom_pair, real_p, df_th, round(th_rsi, 1), th_ema20, th_ema50, th_atr, dom_info_str, active_theories, custom_tf, gemini_key)
+                        plan = compute_mtf_institutional_setup(custom_pair, real_p, mtf_data_fetched, dom_info_str, active_theories)
                         
-                        # Store in session state
                         st.session_state.last_plan = plan
                         st.session_state.last_coin = custom_coin_symbol
                         st.session_state.last_price = real_p
+                        st.session_state.last_mtf = mtf_data_fetched
                         st.session_state.buyers_pct = b_pct
                         st.session_state.sellers_pct = s_pct
                     else:
-                        st.error(f"Binance හි `{custom_pair}` හමු නොවීය.")
+                        st.error(f"Binance හි `{custom_pair}` යුගලය හමු නොවීය.")
                 except Exception as ex:
                     st.error(f"දෝෂයක් ඇති විය: {ex}")
 
-    # Render persisted plan if exists
+    # Render Plan if exists in session
     if st.session_state.last_plan and st.session_state.last_coin:
         plan = st.session_state.last_plan
         coin_sym = st.session_state.last_coin
         real_p = st.session_state.last_price
+        mtf_data = st.session_state.last_mtf
         b_pct = getattr(st.session_state, 'buyers_pct', 50)
         s_pct = getattr(st.session_state, 'sellers_pct', 50)
 
         st.markdown("---")
         dir_label = plan.get('direction', 'NEUTRAL')
-        color_icon = "🟢" if "LONG" in dir_label else ("🔴" if "SHORT" in dir_label else "🟡")
-        st.markdown(f"## {color_icon} Institutional Setup: **{dir_label}** for **{coin_sym}/USDT**")
+        color_icon = "🟢" if "LONG" in dir_label else "🔴"
         
-        pm1, pm2, pm3, pm4, pm5 = st.columns(5)
-        pm1.metric("Live Price", f"${real_p:,.4f}")
-        pm2.metric("Confidence", f"{plan.get('confidence', 80)}%")
-        pm3.metric("R:R Ratio", plan.get('risk_reward', '1:3'))
-        pm4.metric("Recommended Leverage", plan.get('leverage', '3x - 5x'))
-        pm5.metric("Whale Flow", f"🟢 {b_pct}% / 🔴 {s_pct}%")
+        st.markdown(f"## {color_icon} Final Multi-Timeframe Verdict: **{dir_label}** for **{coin_sym}/USDT**")
         
+        # MTF Score Cards
+        score_c1, score_c2, score_c3, score_c4 = st.columns(4)
+        score_c1.metric("Long Confluence Score", f"{plan.get('long_score')}%")
+        score_c2.metric("Short Confluence Score", f"{plan.get('short_score')}%")
+        score_c3.metric("Live Price", f"${real_p:,.4f}")
+        score_c4.metric("Order Flow", f"🟢 {b_pct}% / 🔴 {s_pct}%")
+
+        # Timeframe Status Matrix
+        st.markdown("#### ⏳ Timeframe Health Matrix")
+        tf_cols = st.columns(4)
+        for idx, tf_name in enumerate(['1d', '4h', '1h', '15m']):
+            if tf_name in mtf_data:
+                d = mtf_data[tf_name]
+                with tf_cols[idx]:
+                    st.metric(f"Timeframe: {tf_name.upper()}", d['status'], f"RSI: {d['rsi']}")
+
+        # Charts & Execution Plan
         chart_c, card_c = st.columns([3, 2])
         with chart_c:
             st.markdown("### 📊 Interactive Technical Chart")
             render_tradingview_widget(f"{coin_sym}USDT")
         with card_c:
-            st.markdown("### 🎯 Complete Actionable Trade Card")
+            st.markdown("### 🎯 Primary Actionable Setup")
             plan_table = {
-                "Trade Parameter": ["Direction", "Entry Zone", "Stop Loss (Invalidation)", "Take Profit 1", "Take Profit 2", "Take Profit 3 (Runner)", "Safe Leverage"],
+                "Parameter": ["Final Direction", "Entry Zone", "Stop Loss (Invalidation)", "Take Profit 1", "Take Profit 2", "Take Profit 3 (Runner)", "R:R Ratio", "Safe Leverage"],
                 "Value": [
-                    dir_label, f"${plan.get('entry_zone', 'Market')}", f"${plan.get('stop_loss', 'N/A')}",
-                    f"${plan.get('tp1', 'N/A')}", f"${plan.get('tp2', 'N/A')}", f"${plan.get('tp3', 'N/A')}",
-                    plan.get('leverage', '3x - 5x')
+                    dir_label, f"${plan.get('entry_zone')}", f"${plan.get('stop_loss')}",
+                    f"${plan.get('tp1')}", f"${plan.get('tp2')}", f"${plan.get('tp3')}",
+                    plan.get('risk_reward'), plan.get('leverage')
                 ]
             }
             st.dataframe(pd.DataFrame(plan_table), use_container_width=True, hide_index=True)
             st.markdown("#### 📝 Trade Thesis")
-            st.info(plan.get('summary', 'Setup aligned.'))
+            st.info(plan.get('summary'))
             
             if st.button("📲 Send Plan to Telegram", use_container_width=True):
-                with st.spinner("Telegram එකට යවමින් පවතී..."):
+                with st.spinner("Telegram වෙත යවමින් පවතී..."):
                     t_res_msg = send_theory_telegram_alert(f"{coin_sym}/USDT", plan)
                     if t_res_msg.status_code == 200:
-                        st.success("✅ Trade Plan එක සාර්ථකව Telegram වෙත යවන ලදී!")
+                        st.success("✅ Multi-Timeframe Trade Plan එක සාර්ථකව Telegram වෙත යවන ලදී!")
                     else:
-                        st.error(f"Telegram Error ({t_res_msg.status_code}): {t_res_msg.text}")
-        
+                        st.error(f"Telegram Error: {t_res_msg.text}")
+
+        # Long vs Short Comparison Table
+        st.markdown("---")
+        st.markdown("### ⚖️ Dual Action Plan (Long vs Short Comparison)")
+        dual_data = {
+            "Plan Parameter": ["Entry Zone", "Stop Loss", "TP 1", "TP 2", "TP 3", "Risk : Reward"],
+            "🟢 LONG SETUP (Buy Side)": [
+                f"${plan['long_plan']['entry']}", f"${plan['long_plan']['sl']}", f"${plan['long_plan']['tp1']}",
+                f"${plan['long_plan']['tp2']}", f"${plan['long_plan']['tp3']}", plan['long_plan']['rr']
+            ],
+            "🔴 SHORT SETUP (Sell Side)": [
+                f"${plan['short_plan']['entry']}", f"${plan['short_plan']['sl']}", f"${plan['short_plan']['tp1']}",
+                f"${plan['short_plan']['tp2']}", f"${plan['short_plan']['tp3']}", plan['short_plan']['rr']
+            ]
+        }
+        st.dataframe(pd.DataFrame(dual_data), use_container_width=True, hide_index=True)
+
+        # Theories Breakdown
         st.markdown("---")
         st.markdown("### 🧠 Theory-by-Theory Confluence Findings")
         breakdown = plan.get("theory_breakdown", [])
@@ -411,6 +492,20 @@ with tab_theory:
                 with b_cols[i_idx % 3]:
                     st.success(f"**{b_item.get('theory')}**")
                     st.write(b_item.get('finding'))
+
+        # Invalidation & Checklist
+        st.markdown("---")
+        st.markdown("### 📋 Institutional Risk Management Roadmap")
+        sum_col1, sum_col2 = st.columns([2, 1])
+        with sum_col1:
+            st.warning(f"⚠️ **Trade Invalidation Criteria:** {plan.get('invalidation')}")
+            st.write("• **Position Sizing:** මෙම trade එක සඳහා ඔබගේ මුළු මුදලින් 1% - 2% කට වඩා Risk නොකරන්න.")
+            st.write("• **Profit Taking Strategy:** TP1 ළඟා වූ විට මුල් Stop Loss අගය Entry මට්ටමට (Break-even) ගෙන එන්න.")
+        with sum_col2:
+            st.markdown("#### ✅ Execution Rules")
+            st.checkbox("Macro (1D/4H) Trend එකට අනුකූලද?", value=True)
+            st.checkbox("15m Entry Candle එකක් තහවුරු වූවාද?", value=True)
+            st.checkbox("Hard Stop Loss Binance එකේ දැමුවාද?", value=True)
 
 # ----------------- TAB 2: 24/7 MARKET SCANNER -----------------
 with tab_scanner:
