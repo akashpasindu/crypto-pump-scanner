@@ -73,14 +73,15 @@ def play_alert_sound():
     sound_code = """<audio autoplay><source src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" type="audio/ogg"></audio>"""
     components.html(sound_code, height=0, width=0)
 
-def render_tradingview_widget(symbol_raw):
+def render_tradingview_widget(symbol_raw, is_futures=False):
+    chart_symbol = f"BINANCE:{symbol_raw}.P" if is_futures else f"BINANCE:{symbol_raw}"
     widget_code = f"""
     <div class="tradingview-widget-container">
       <div id="tradingview_{symbol_raw}"></div>
       <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
       <script type="text/javascript">
       new TradingView.widget({{
-        "width": "100%", "height": 450, "symbol": "BINANCE:{symbol_raw}",
+        "width": "100%", "height": 450, "symbol": "{chart_symbol}",
         "interval": "15", "timezone": "Etc/UTC", "theme": "dark", "style": "1",
         "locale": "en", "toolbar_bg": "#f1f3f6", "enable_publishing": false,
         "hide_top_toolbar": false, "save_image": false, "container_id": "tradingview_{symbol_raw}"
@@ -107,7 +108,6 @@ def calculate_atr(df, period=14):
     return tr.rolling(min(period, len(df))).mean().iloc[-1]
 
 def get_orderbook_ratio(raw_symbol):
-    # Try Spot depth first
     try:
         res = requests.get(f"{SPOT_BASE_URL}/depth", params={'symbol': raw_symbol, 'limit': 20}, timeout=4)
         if res.status_code == 200:
@@ -119,7 +119,6 @@ def get_orderbook_ratio(raw_symbol):
     except Exception:
         pass
 
-    # Try Futures depth fallback
     try:
         res = requests.get(f"{FUTURES_BASE_URL}/depth", params={'symbol': raw_symbol, 'limit': 20}, timeout=4)
         if res.status_code == 200:
@@ -159,26 +158,43 @@ def detect_candlestick_pattern(df):
         return "Three Black Crows 🩸"
     return "Volume Breakout ⚡"
 
-# ================= SMART DUAL (SPOT + FUTURES) MTF FETCH =================
-def fetch_mtf_data(symbol):
+# ================= AUTOMATIC SYMBOL RESOLVER =================
+def resolve_and_fetch_mtf(coin_input):
+    cleaned = coin_input.strip().upper().replace("USDT", "")
+    candidates = [
+        f"{cleaned}USDT",
+        f"1000{cleaned}USDT",
+        f"10000{cleaned}USDT"
+    ]
+    
+    resolved_symbol = None
+    use_futures = False
+    endpoint = SPOT_BASE_URL
+
+    for cand in candidates:
+        chk_spot = requests.get(f"{SPOT_BASE_URL}/ticker/price", params={'symbol': cand}, timeout=3)
+        if chk_spot.status_code == 200:
+            resolved_symbol = cand
+            use_futures = False
+            endpoint = SPOT_BASE_URL
+            break
+
+        chk_fut = requests.get(f"{FUTURES_BASE_URL}/ticker/price", params={'symbol': cand}, timeout=3)
+        if chk_fut.status_code == 200:
+            resolved_symbol = cand
+            use_futures = True
+            endpoint = FUTURES_BASE_URL
+            break
+
+    if not resolved_symbol:
+        return None, False, None
+
     tf_data = {}
     timeframes = ['15m', '1h', '4h', '1d']
-    
-    # 1. Determine Endpoint (Spot or Futures)
-    use_futures = False
-    chk = requests.get(f"{SPOT_BASE_URL}/ticker/price", params={'symbol': symbol}, timeout=4)
-    if chk.status_code != 200:
-        chk_f = requests.get(f"{FUTURES_BASE_URL}/ticker/price", params={'symbol': symbol}, timeout=4)
-        if chk_f.status_code == 200:
-            use_futures = True
-        else:
-            return None, False
-
-    base_endpoint = FUTURES_BASE_URL if use_futures else SPOT_BASE_URL
 
     for tf in timeframes:
         try:
-            res = requests.get(f"{base_endpoint}/klines", params={'symbol': symbol, 'interval': tf, 'limit': 35}, timeout=5)
+            res = requests.get(f"{endpoint}/klines", params={'symbol': resolved_symbol, 'interval': tf, 'limit': 35}, timeout=5)
             if res.status_code == 200:
                 raw_candles = res.json()
                 if len(raw_candles) >= 3:
@@ -206,10 +222,10 @@ def fetch_mtf_data(symbol):
         except Exception:
             continue
             
-    return tf_data, use_futures
+    return tf_data, use_futures, resolved_symbol
 
 # ================= INSTITUTIONAL MTF SYNTHESIZER =================
-def compute_mtf_institutional_setup(coin, current_price, mtf_data, dom_info, selected_theories):
+def compute_mtf_institutional_setup(symbol_resolved, current_price, mtf_data, dom_info, selected_theories):
     bull_count = sum(1 for tf, d in mtf_data.items() if d['raw_bull'])
     total_tfs = max(1, len(mtf_data))
     
@@ -220,7 +236,6 @@ def compute_mtf_institutional_setup(coin, current_price, mtf_data, dom_info, sel
     final_direction = "STRONG LONG" if long_score >= 75 else ("STRONG SHORT" if short_score >= 75 else ("SCALP LONG" if is_long_priority else "SCALP SHORT"))
     confidence = max(long_score, short_score)
     
-    # Select available lowest timeframe ATR
     atr_val = current_price * 0.02
     for tf_k in ['15m', '1h', '4h']:
         if tf_k in mtf_data:
@@ -378,7 +393,7 @@ tab_theory, tab_scanner = st.tabs(["🏛️ Multi-Timeframe Institutional Termin
 # ----------------- TAB 1: MTF DEEP DIVE ANALYZER -----------------
 with tab_theory:
     st.subheader("🏛️ Universal Multi-Timeframe Deep Dive (1D • 4H • 1H • 15M)")
-    st.caption("Spot සහ Futures කාසි සියල්ලටම සහය දක්වයි (Supports New Listings & Perp Contracts).")
+    st.caption("Spot සහ Futures කාසි සියල්ලටම සහය දක්වයි (Auto-resolves 1000x prefixes).")
 
     ALL_THEORIES = [
         "Smart Money Concepts (SMC / ICT) — Order Blocks, FVG, Liquidity Sweeps",
@@ -408,7 +423,7 @@ with tab_theory:
     st.write("---")
     in_col1, in_col2 = st.columns([3, 1])
     with in_col1:
-        custom_coin_symbol = st.text_input("කාසියේ නම (Coin Symbol):", value="FLOCK", placeholder="e.g. FLOCK, SOL, BTC, ETH, PEPE").strip().upper()
+        custom_coin_symbol = st.text_input("කාසියේ නම (Coin Symbol):", value="FLOCK", placeholder="e.g. FLOCK, SOL, BTC, PEPE, DOGE").strip().upper()
     with in_col2:
         st.write("##")
         run_theory_btn = st.button("🚀 Multi-Timeframe Analysis", use_container_width=True)
@@ -417,31 +432,31 @@ with tab_theory:
 
     if run_theory_btn and custom_coin_symbol:
         manual_analysis_running = True
-        custom_pair = f"{custom_coin_symbol}USDT"
         if not active_theories:
             st.warning("⚠️ කරුණාකර අවම වශයෙන් එක් Theory එකක් තෝරන්න.")
         else:
             st.info("⏸️ **Market Scanner එක Pause කරන ලදී.** Binance Spot සහ Futures පරීක්ෂා කරමින් පවතී...")
-            with st.spinner(f"{custom_pair} දත්ත සකසමින් පවතී..."):
+            with st.spinner(f"{custom_coin_symbol} සඳහා දත්ත සකසමින් පවතී..."):
                 try:
-                    mtf_data_fetched, is_fut = fetch_mtf_data(custom_pair)
+                    mtf_data_fetched, is_fut, resolved_sym = resolve_and_fetch_mtf(custom_coin_symbol)
                     if mtf_data_fetched and len(mtf_data_fetched) > 0:
                         lowest_tf = '15m' if '15m' in mtf_data_fetched else list(mtf_data_fetched.keys())[0]
                         real_p = mtf_data_fetched[lowest_tf]['price']
-                        b_pct, s_pct = get_orderbook_ratio(custom_pair)
+                        b_pct, s_pct = get_orderbook_ratio(resolved_sym)
                         dom_info_str = f"Buyers: {b_pct}% | Sellers: {s_pct}%"
                         
-                        plan = compute_mtf_institutional_setup(custom_pair, real_p, mtf_data_fetched, dom_info_str, active_theories)
+                        plan = compute_mtf_institutional_setup(resolved_sym, real_p, mtf_data_fetched, dom_info_str, active_theories)
                         
                         st.session_state.last_plan = plan
                         st.session_state.last_coin = custom_coin_symbol
+                        st.session_state.resolved_sym = resolved_sym
                         st.session_state.last_price = real_p
                         st.session_state.last_mtf = mtf_data_fetched
                         st.session_state.buyers_pct = b_pct
                         st.session_state.sellers_pct = s_pct
                         st.session_state.is_futures_only = is_fut
                     else:
-                        st.error(f"Binance Spot හෝ Futures යන දෙකෙහිම `{custom_pair}` යුගලය හමු නොවීය. කරුණාකර Symbol එක නිවැරදි දැයි බලන්න.")
+                        st.error(f"Binance හි `{custom_coin_symbol}` හෝ `1000{custom_coin_symbol}` නමින් Spot/Futures යුගලයක් හමු නොවීය.")
                 except Exception as ex:
                     st.error(f"දෝෂයක් ඇති විය: {ex}")
 
@@ -449,18 +464,19 @@ with tab_theory:
     if st.session_state.last_plan and st.session_state.last_coin:
         plan = st.session_state.last_plan
         coin_sym = st.session_state.last_coin
+        resolved_sym = getattr(st.session_state, 'resolved_sym', f"{coin_sym}USDT")
         real_p = st.session_state.last_price
         mtf_data = st.session_state.last_mtf
         b_pct = getattr(st.session_state, 'buyers_pct', 50)
         s_pct = getattr(st.session_state, 'sellers_pct', 50)
         is_fut = getattr(st.session_state, 'is_futures_only', False)
 
-        market_tag = "(Binance Futures / Perp)" if is_fut else "(Binance Spot)"
+        market_tag = f"(Futures: {resolved_sym})" if is_fut else f"(Spot: {resolved_sym})"
         st.markdown("---")
         dir_label = plan.get('direction', 'NEUTRAL')
         color_icon = "🟢" if "LONG" in dir_label else "🔴"
         
-        st.markdown(f"## {color_icon} Final Multi-Timeframe Verdict: **{dir_label}** for **{coin_sym}/USDT** `{market_tag}`")
+        st.markdown(f"## {color_icon} Final Multi-Timeframe Verdict: **{dir_label}** for **{resolved_sym}** `{market_tag}`")
         
         score_c1, score_c2, score_c3, score_c4 = st.columns(4)
         score_c1.metric("Long Confluence Score", f"{plan.get('long_score')}%")
@@ -482,7 +498,7 @@ with tab_theory:
         chart_c, card_c = st.columns([3, 2])
         with chart_c:
             st.markdown("### 📊 Interactive Technical Chart")
-            render_tradingview_widget(f"{coin_sym}USDT")
+            render_tradingview_widget(resolved_sym, is_futures=is_fut)
         with card_c:
             st.markdown("### 🎯 Primary Actionable Setup")
             plan_table = {
@@ -499,7 +515,7 @@ with tab_theory:
             
             if st.button("📲 Send Plan to Telegram", use_container_width=True):
                 with st.spinner("Telegram වෙත යවමින් පවතී..."):
-                    t_res_msg = send_theory_telegram_alert(f"{coin_sym}/USDT", plan)
+                    t_res_msg = send_theory_telegram_alert(resolved_sym, plan)
                     if t_res_msg.status_code == 200:
                         st.success("✅ Multi-Timeframe Trade Plan එක සාර්ථකව Telegram වෙත යවන ලදී!")
                     else:
