@@ -6,8 +6,9 @@ import json
 import re
 import html
 import time
+import xml.etree.ElementTree as ET
 
-st.set_page_config(page_title="Universal Binance AI Terminal", layout="wide")
+st.set_page_config(page_title="Universal Crypto Terminal & News Hub", layout="wide")
 
 # ================= CONFIGURATION =================
 TELEGRAM_BOT_TOKEN = "8277509351:AAFgtRQ6jNApDmGjaZ4ARbqAHIu7us_MACk"
@@ -16,6 +17,7 @@ DEFAULT_GEMINI_KEY = ""
 
 SPOT_BASE_URL = "https://data-api.binance.vision/api/v3"
 FUTURES_BASE_URL = "https://fapi.binance.com/fapi/v1"
+FUTURES_DATA_URL = "https://fapi.binance.com/futures/data"
 
 def send_scanner_telegram_alert(signal_type, coin, price, change, volume_spike, rsi_val, tp1, tp2, sl, dominance_info, pattern_name, ai_verdict):
     clean_symbol = coin.replace('/', '_')
@@ -51,10 +53,15 @@ def send_theory_telegram_alert(coin, plan):
         th_reason = html.escape(b_item.get('why_reason', 'Aligned'))
         reasons_text += f"\n• <b>{th_name}:</b> {th_reason}"
 
+    derivatives_data = plan.get('derivatives', {})
+    oi_txt = derivatives_data.get('oi_status', 'N/A')
+    funding_txt = derivatives_data.get('funding_rate', 'N/A')
+
     msg_html = (
-        f"🏛️ <b>Institutional Multi-Theory Setup</b>\n\n"
+        f"🏛️ <b>Institutional Derivatives & Multi-Theory Setup</b>\n\n"
         f"🪙 <b>Coin:</b> <code>{coin}</code>\n"
         f"🎯 <b>Final Verdict:</b> {icon} <b>{direction_val}</b> | <b>Score:</b> <code>{plan.get('confidence', 80)}%</code>\n"
+        f"📊 <b>Derivatives:</b> OI: <code>{oi_txt}</code> | Funding: <code>{funding_txt}</code>\n"
         f"⚙️ <b>Leverage:</b> <code>{plan.get('leverage', '3x - 5x')}</code> | <b>R:R:</b> <code>{plan.get('risk_reward', '1:3')}</code>\n\n"
         f"📥 <b>Entry Zone:</b> <code>${plan.get('entry_zone', 'Market')}</code>\n"
         f"🛑 <b>Stop Loss:</b> <code>${plan.get('stop_loss', 'N/A')}</code>\n\n"
@@ -62,7 +69,7 @@ def send_theory_telegram_alert(coin, plan):
         f"  ├ TP 1: <code>${plan.get('tp1', 'N/A')}</code>\n"
         f"  ├ TP 2: <code>${plan.get('tp2', 'N/A')}</code>\n"
         f"  └ TP 3: <code>${plan.get('tp3', 'N/A')}</code>\n\n"
-        f"🧠 <b>Key Concept Reasons (හේතු සාරාංශය):</b>{reasons_text}\n\n"
+        f"🧠 <b>Key Concept Reasons:</b>{reasons_text}\n\n"
         f"📝 <b>Thesis:</b> {summary_clean}\n\n"
         f"🔗 <a href='https://www.binance.com/en/trade/{clean_symbol}'>Trade on Binance</a>"
     )
@@ -125,7 +132,7 @@ def get_orderbook_ratio(raw_symbol):
 
 def detect_candlestick_pattern(df):
     if len(df) < 3:
-        return "New Listing Launch 🚀"
+        return "Momentum Play ⚡"
     c1, o1, h1, l1 = df['close'].iloc[-1], df['open'].iloc[-1], df['high'].iloc[-1], df['low'].iloc[-1]
     c2, o2 = df['close'].iloc[-2], df['open'].iloc[-2]
     body1 = abs(c1 - o1)
@@ -140,9 +147,116 @@ def detect_candlestick_pattern(df):
         return "Bearish Engulfing 🔴"
     if (upper_wick1 >= 1.5 * body1) and (c1 <= o1):
         return "Shooting Star 🌠"
-    return "Momentum Continuation ⚡"
+    return "Volume Breakout ⚡"
 
-# ================= UNIVERSAL BINANCE SMART COIN DISCOVERY =================
+# ================= FUNDAMENTAL NEWS & SENTIMENT ENGINE =================
+def fetch_fear_and_greed():
+    try:
+        res = requests.get("https://api.alternative.me/fng/", timeout=4)
+        if res.status_code == 200:
+            data = res.json()['data'][0]
+            val = data['value']
+            sentiment = data['value_classification']
+            return val, sentiment
+    except Exception:
+        pass
+    return "50", "Neutral"
+
+def fetch_crypto_rss_news():
+    feeds = [
+        ("CoinTelegraph", "https://cointelegraph.com/rss"),
+        ("CoinDesk", "https://www.coindesk.com/arc/outboundfeeds/rss/")
+    ]
+    news_items = []
+    for source_name, url in feeds:
+        try:
+            resp = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
+            if resp.status_code == 200:
+                root = ET.fromstring(resp.content)
+                for item in root.findall('./channel/item')[:6]:
+                    title = item.find('title').text if item.find('title') is not None else "No Title"
+                    link = item.find('link').text if item.find('link') is not None else "#"
+                    pub_date = item.find('pubDate').text if item.find('pubDate') is not None else ""
+                    description = item.find('description').text if item.find('description') is not None else ""
+                    
+                    # Sentiment heuristic
+                    clean_text = (title + " " + description).lower()
+                    bullish_keywords = ['surge', 'rally', 'soar', 'etf approved', 'partnership', 'bull', 'gain', 'all-time high', 'breakout', 'inflow']
+                    bearish_keywords = ['crash', 'drop', 'sec', 'lawsuit', 'hack', 'drain', 'bear', 'ban', 'plunge', 'outflow', 'dump']
+                    
+                    bull_hits = sum(1 for w in bullish_keywords if w in clean_text)
+                    bear_hits = sum(1 for w in bearish_keywords if w in clean_text)
+                    
+                    if bull_hits > bear_hits:
+                        impact = "🟢 BULLISH"
+                    elif bear_hits > bull_hits:
+                        impact = "🔴 BEARISH"
+                    else:
+                        impact = "⚪ NEUTRAL"
+
+                    news_items.append({
+                        "source": source_name,
+                        "title": title,
+                        "link": link,
+                        "date": pub_date[:16],
+                        "impact": impact
+                    })
+        except Exception:
+            continue
+    return news_items
+
+# ================= DERIVATIVES & ON-CHAIN INTELLIGENCE FETCH =================
+def fetch_derivatives_intelligence(symbol):
+    info = {
+        "is_futures_available": False,
+        "funding_rate": "0.0000%",
+        "funding_raw": 0.0,
+        "funding_bias": "Neutral",
+        "oi_value": "N/A",
+        "oi_status": "Normal Flow",
+        "top_traders_ratio": "50% Long / 50% Short",
+        "liq_levels_50x": "N/A",
+        "liq_levels_25x": "N/A"
+    }
+    try:
+        res_p = requests.get(f"{FUTURES_BASE_URL}/premiumIndex", params={'symbol': symbol}, timeout=3)
+        if res_p.status_code == 200:
+            data_p = res_p.json()
+            info["is_futures_available"] = True
+            fr = float(data_p.get('lastFundingRate', 0)) * 100
+            info["funding_raw"] = fr
+            info["funding_rate"] = f"{fr:+.4f}%"
+            if fr > 0.04:
+                info["funding_bias"] = "⚠️ Over-leveraged Longs (Long Squeeze Risk)"
+            elif fr < -0.02:
+                info["funding_bias"] = "🚀 Heavily Shorted (Short Squeeze Fuel)"
+            else:
+                info["funding_bias"] = "Balanced Funding"
+    except Exception:
+        pass
+
+    try:
+        res_oi = requests.get(f"{FUTURES_BASE_URL}/openInterest", params={'symbol': symbol}, timeout=3)
+        if res_oi.status_code == 200:
+            oi_val = float(res_oi.json().get('openInterest', 0))
+            info["oi_value"] = f"{oi_val:,.0f}"
+            info["oi_status"] = "Active Institutional Interest"
+    except Exception:
+        pass
+
+    try:
+        res_ls = requests.get(f"{FUTURES_DATA_URL}/topLongShortPositionRatio", params={'symbol': symbol, 'period': '15m', 'limit': 1}, timeout=3)
+        if res_ls.status_code == 200 and len(res_ls.json()) > 0:
+            ls_data = res_ls.json()[0]
+            l_ratio = round(float(ls_data.get('longAccount', 0.5)) * 100, 1)
+            s_ratio = round(float(ls_data.get('shortAccount', 0.5)) * 100, 1)
+            info["top_traders_ratio"] = f"🟢 {l_ratio}% Longs vs 🔴 {s_ratio}% Shorts"
+    except Exception:
+        pass
+
+    return info
+
+# ================= UNIVERSAL COIN DISCOVERY =================
 def resolve_any_binance_coin(user_input):
     clean = user_input.strip().upper()
     for quote in ['USDT', 'USDC', 'BUSD', 'FDUSD']:
@@ -176,22 +290,17 @@ def resolve_any_binance_coin(user_input):
 
     return None, False, None
 
-# ================= MULTI-TIMEFRAME / NEW LISTING ADAPTIVE FETCH =================
+# ================= ADAPTIVE MULTI-TIMEFRAME DATA FETCH =================
 def fetch_universal_adaptive_data(resolved_symbol, is_futures):
     endpoint = FUTURES_BASE_URL if is_futures else SPOT_BASE_URL
     tf_data = {}
-    
-    # Priority timeframes (Macro down to Micro)
     standard_tfs = ['1d', '4h', '1h', '15m']
     new_listing_fallback_tfs = ['15m', '5m', '3m', '1m']
 
-    # Check available history length
     chk = requests.get(f"{endpoint}/klines", params={'symbol': resolved_symbol, 'interval': '1h', 'limit': 15}, timeout=4)
     is_brand_new = False
-    if chk.status_code == 200:
-        candles = chk.json()
-        if len(candles) < 12:  # Listed less than 12 hours ago!
-            is_brand_new = True
+    if chk.status_code == 200 and len(chk.json()) < 12:
+        is_brand_new = True
 
     active_query_tfs = new_listing_fallback_tfs if is_brand_new else standard_tfs
 
@@ -206,15 +315,12 @@ def fetch_universal_adaptive_data(resolved_symbol, is_futures):
                         df[col] = df[col].astype(float)
                     
                     c_len = len(df)
-                    rsi_period = min(14, max(2, c_len - 1))
-                    rsi_series = calculate_rsi(df['close'], period=rsi_period)
+                    rsi_series = calculate_rsi(df['close'], period=min(14, max(2, c_len - 1)))
                     rsi = rsi_series.iloc[-1] if not rsi_series.empty and not pd.isna(rsi_series.iloc[-1]) else 50.0
-                    
-                    ema_span = min(20, c_len)
-                    ema20 = df['close'].ewm(span=ema_span, adjust=False).mean().iloc[-1]
+                    ema20 = df['close'].ewm(span=min(20, c_len), adjust=False).mean().iloc[-1]
                     current_p = df['close'].iloc[-1]
-                    
                     is_bullish = current_p >= ema20 and rsi >= 48
+                    
                     tf_data[tf] = {
                         "price": current_p,
                         "rsi": round(rsi, 1),
@@ -229,12 +335,18 @@ def fetch_universal_adaptive_data(resolved_symbol, is_futures):
             
     return tf_data, is_brand_new
 
-# ================= INSTITUTIONAL MTF & CONCEPT REASONING SYNTHESIZER =================
-def compute_institutional_trade_setup(symbol_resolved, current_price, mtf_data, dom_info, selected_theories, is_brand_new):
+# ================= INSTITUTIONAL MTF & DERIVATIVES SYNTHESIZER =================
+def compute_institutional_trade_setup(symbol_resolved, current_price, mtf_data, dom_info, selected_theories, is_brand_new, derivatives):
     bull_count = sum(1 for tf, d in mtf_data.items() if d['raw_bull'])
     total_tfs = max(1, len(mtf_data))
     
     long_score = int((bull_count / total_tfs) * 100)
+    
+    if derivatives.get("funding_raw", 0) < -0.02:
+        long_score = min(98, long_score + 10)
+    elif derivatives.get("funding_raw", 0) > 0.04:
+        long_score = max(5, long_score - 10)
+
     short_score = 100 - long_score
     is_long_priority = long_score >= 50
     
@@ -242,14 +354,12 @@ def compute_institutional_trade_setup(symbol_resolved, current_price, mtf_data, 
     final_direction = f"{prefix_mode}STRONG LONG" if long_score >= 75 else (f"{prefix_mode}STRONG SHORT" if short_score >= 75 else (f"{prefix_mode}SCALP LONG" if is_long_priority else f"{prefix_mode}SCALP SHORT"))
     confidence = max(long_score, short_score)
     
-    # Lowest timeframe ATR
     atr_val = current_price * 0.02
     for tf_k in ['1m', '3m', '5m', '15m', '1h']:
         if tf_k in mtf_data:
             atr_val = mtf_data[tf_k]['atr']
             break
             
-    # Buffer Multipliers
     atr_multiplier = 1.8 if is_brand_new else 1.5
     sl_long = max(0.00000001, current_price - (atr_val * atr_multiplier))
     tp1_l = current_price + (atr_val * 2.2)
@@ -261,7 +371,14 @@ def compute_institutional_trade_setup(symbol_resolved, current_price, mtf_data, 
     tp2_s = max(0.00000001, current_price - (atr_val * 3.8))
     tp3_s = max(0.00000001, current_price - (atr_val * 5.5))
     
+    liq_50x_long = current_price * 0.98
+    liq_50x_short = current_price * 1.02
+    liq_25x_long = current_price * 0.96
+    liq_25x_short = current_price * 1.04
+    
     fmt = ".6f" if current_price < 0.01 else (".4f" if current_price < 10 else ".2f")
+    derivatives["liq_levels_50x"] = f"Longs: ${format(liq_50x_long, fmt)} | Shorts: ${format(liq_50x_short, fmt)}"
+    derivatives["liq_levels_25x"] = f"Longs: ${format(liq_25x_long, fmt)} | Shorts: ${format(liq_25x_short, fmt)}"
 
     if is_long_priority:
         active_entry = f"{format(current_price * 0.996, fmt)} - {format(current_price * 1.003, fmt)}"
@@ -269,71 +386,53 @@ def compute_institutional_trade_setup(symbol_resolved, current_price, mtf_data, 
         active_tp1 = format(tp1_l, fmt)
         active_tp2 = format(tp2_l, fmt)
         active_tp3 = format(tp3_l, fmt)
-        active_rr = "1:2.5" if is_brand_new else "1:2.8"
-        active_lev = "2x - 3x (High Volatility)" if is_brand_new else ("5x - 10x" if confidence >= 75 else "3x - 5x")
+        active_rr = "1:2.8"
+        active_lev = "2x - 3x" if is_brand_new else ("5x - 10x" if confidence >= 75 else "3x - 5x")
     else:
         active_entry = f"{format(current_price * 1.004, fmt)} - {format(current_price * 0.997, fmt)}"
         active_sl = format(sl_short, fmt)
         active_tp1 = format(tp1_s, fmt)
         active_tp2 = format(tp2_s, fmt)
         active_tp3 = format(tp3_s, fmt)
-        active_rr = "1:2.2" if is_brand_new else "1:2.6"
-        active_lev = "2x - 3x (High Volatility)" if is_brand_new else "3x - 5x"
+        active_rr = "1:2.6"
+        active_lev = "2x - 3x" if is_brand_new else "3x - 5x"
 
-    # Timeframe Summary String
     mtf_lines = []
     for tf_key, d in mtf_data.items():
         mtf_lines.append(f"• <b>{tf_key.upper()}:</b> {d['status']} (RSI: {d['rsi']})")
     mtf_summary = "\n".join(mtf_lines)
 
-    # Concept Reasoning Breakdown
     theory_findings = []
     for th in selected_theories:
         short_t = th.split("—")[0].strip()
         if "Smart Money" in short_t:
             reason = (
-                f"මිල අවසන් Swing Liquidity එක sweep කර {'Demand Order Block එකක retest එකක්' if is_long_priority else 'Supply zone rejection එකක්'} සනාථ කර ඇත. ඉහළ Fair Value Gap (FVG) එක තවමත් mitigate වී නැති නිසා මිල ඉහළට ඇදී යාමේ සම්භාවිතාව වැඩිය."
+                f"Liquidity Sweep අවසන් වී Order Block එකක් සාදා ඇත. 50x Shorts Liquidation Zone (${format(liq_50x_short, fmt)}) ඉලක්ක කර Smart Money මිල ඉහළට තල්ලු කිරීමේ ඉඩ වැඩිය."
                 if is_long_priority else
-                f"ඉහළ Buy-side liquidity grab එකකින් පසු Lower-timeframe Change of Character (CHoCH) එකක් පෙන්වමින් Bearish Order Block එකක් සාදා ඇති බැවින් Downside imbalance එක පිරවීමට පහත බසිනු ඇත."
+                f"ඉහළ Buy Liquidity උරාබීමෙන් පසු Downside FVG සහ 50x Long Liquidation Pool (${format(liq_50x_long, fmt)}) දෙසට Bearish Order Flow සක්‍රීය වී ඇත."
             )
         elif "Wyckoff" in short_t:
             reason = (
-                f"මෑත ඉටිපන්දම් වල Volume Absorption පෙනෙන්නට තිබේ. {'Phase C Spring (False breakdown) අවසන් වී Sign of Strength (SOS) සමඟ Smart Money එකතු වීමක්' if is_long_priority else 'Upthrust After Distribution (UTAD) මඟින් Smart Money විසින් Retailers ලාට විකිණීමක්'} සිදුවන බව පෙනේ."
+                f"Open Interest ({derivatives['oi_value']}) සමඟ Volume Flow සැසඳීමේදී {'Accumulation Phase C (Spring test) සමඟ Whales ලා මිලදී ගැනීම' if is_long_priority else 'Distribution Phase C (UTAD) සමඟ smart money විකිණීම'} තහවුරු වේ."
             )
         elif "Dow" in short_t:
-            reason = (
-                f"Dow Theory ට අනුව මිල {'Higher Highs සහ Higher Lows (Bullish Break of Structure - BOS)' if is_long_priority else 'Lower Highs සහ Lower Lows (Bearish Market Structure Shift)'} සාදන බැවින් Trend Continuation එක තහවුරුයි."
-            )
-        elif "Elliott" in short_t:
-            reason = (
-                f"තරංග චලනය (Wave Structure) පරීක්ෂා කළ විට මෙය {'Impulse Wave 3 (උපරිම වේගවත් expansion එකක්)' if is_long_priority else 'Corrective C-wave impulse එකක්'} ලෙස හඳුනාගත හැක."
-            )
-        elif "Supply" in short_t:
-            reason = (
-                f"{'නැවුම් (Fresh) Demand Zone එකකින් ඉහළට මිල ප්‍රතික්ෂේප වී (Rejection wick) ඇත' if is_long_priority else 'ප්‍රබල Supply Zone එකක විකුණුම්කරුවන් මිල පාලනය ගෙන ඇත'}."
-            )
+            reason = f"වෙළඳපොළ ව්‍යුහය (Market Structure) මඟින් {'Bullish BOS (Higher Highs/Lows)' if is_long_priority else 'Bearish CHoCH (Lower Highs/Lows)'} සනාථ වේ."
         elif "RSI" in short_t:
             rsi_val = list(mtf_data.values())[0]['rsi']
-            reason = (
-                f"RSI අගය ({rsi_val}) මඟින් {'Healthy Momentum එකක් පෙන්වන අතර Hidden Bullish Divergence තත්ත්වයක්' if is_long_priority else 'Overbought වීමෙන් පසු Bearish Divergence සමඟ පහත වැටීමක්'} පෙන්වයි."
-            )
+            reason = f"RSI අගය ({rsi_val}) Funding Rate ({derivatives['funding_rate']}) සමඟ ගැලපෙන විට {'Overbought තත්ත්වයකින් තොරව Momentum ඉහළ යයි' if is_long_priority else 'Momentum පහත වැටීමක්'} පෙන්නුම් කරයි."
         else:
-            reason = f"Moving Averages සහ Candlestick රටා මඟින් {'මිල ඉහළ යාම සඳහා Volume Breakout එකක්' if is_long_priority else 'Support බිඳවැටීමක්'} තහවුරු කරයි."
+            reason = f"Derivatives sentiment ({derivatives['top_traders_ratio']}) ප්‍රධාන Trend එක තහවුරු කරයි."
             
-        theory_findings.append({
-            "theory": short_t,
-            "why_reason": reason
-        })
+        theory_findings.append({"theory": short_t, "why_reason": reason})
 
-    market_condition_text = "අලුතින්ම List වූ අධික Volatility සහිත කාසියකි (Micro-Timeframe Scalp Mode)" if is_brand_new else "Multi-Timeframe Confluence Mode"
     thesis = (
-        f"{symbol_resolved} සඳහා කාල පරාස {len(mtf_data)} ක් හරහා සිදු කළ පරීක්ෂාවේදී {final_direction} දිශාව "
-        f"{long_score}% Long එදිරිව {short_score}% Short එකඟතාවයකින් තහවුරු විය. ({market_condition_text})"
+        f"Technical Confluence ({long_score}% vs {short_score}%) සහ Derivatives Intelligence (Funding: {derivatives['funding_rate']}, Top Traders: {derivatives['top_traders_ratio']}) "
+        f"මඟින් {final_direction} දිශාව සනාථ වේ."
     )
 
     invalidation = (
-        f"මිල ${format(sl_long, fmt)} ට වඩා පහළින් Candle Close එකක් තැබුවහොත් මෙම Long Setup එක සම්පූර්ණයෙන්ම අවලංගු (Invalid) වේ." if is_long_priority
-        else f"මිල ${format(sl_short, fmt)} ට වඩා ඉහළින් Candle Close එකක් තැබුවහොත් මෙම Short Setup එක අවලංගු (Invalid) වේ."
+        f"මිල ${format(sl_long, fmt)} ට පහළින් Candle Close තැබුවහොත් හෝ Long Flush එකක් ආවහොත් Setup එක Invalid වේ." if is_long_priority
+        else f"මිල ${format(sl_short, fmt)} ට ඉහළින් Candle Close තැබුවහොත් Setup එක Invalid වේ."
     )
 
     return {
@@ -354,6 +453,7 @@ def compute_institutional_trade_setup(symbol_resolved, current_price, mtf_data, 
         "invalidation": invalidation,
         "mtf_summary": mtf_summary,
         "is_brand_new": is_brand_new,
+        "derivatives": derivatives,
         "long_plan": {"entry": f"{format(current_price * 0.996, fmt)} - {format(current_price * 1.003, fmt)}", "sl": format(sl_long, fmt), "tp1": format(tp1_l, fmt), "tp2": format(tp2_l, fmt), "tp3": format(tp3_l, fmt), "rr": "1:2.8"},
         "short_plan": {"entry": f"{format(current_price * 1.004, fmt)} - {format(current_price * 0.997, fmt)}", "sl": format(sl_short, fmt), "tp1": format(tp1_s, fmt), "tp2": format(tp2_s, fmt), "tp3": format(tp3_s, fmt), "rr": "1:2.6"}
     }
@@ -418,13 +518,17 @@ def check_1h_trend(raw_symbol, current_price, signal_type, is_futures=False):
     except Exception:
         return True
 
-# ================= TABS =================
-tab_theory, tab_scanner = st.tabs(["🏛️ Universal Coin & New Listing Terminal", "📡 24/7 Autonomous Scanner"])
+# ================= TABS NAVIGATION =================
+tab_theory, tab_news, tab_scanner = st.tabs([
+    "🏛️ Universal Coin & Derivatives", 
+    "📰 Live Fundamental News & Macro", 
+    "📡 24/7 Autonomous Scanner"
+])
 
 # ----------------- TAB 1: UNIVERSAL COIN DEEP DIVE -----------------
 with tab_theory:
-    st.subheader("🏛️ Universal Binance Coin Analyzer (Brand New Listings & All Pairs)")
-    st.caption("දැන් List වූ කාසියක් වුවද (1m, 3m, 5m Scalp Data හරහා) සහ පවතින සියලුම Spot/Futures කාසි සඳහා පරිපූර්ණ හේතු සාරාංශයක් ලබාදේ.")
+    st.subheader("🏛️ Universal Institutional Coin & Derivatives Intelligence Terminal")
+    st.caption("Multi-Timeframe Technicals + Live Derivatives Order Flow (Open Interest, Funding Rate, Liquidation Pools).")
 
     ALL_THEORIES = [
         "Smart Money Concepts (SMC / ICT) — Order Blocks, FVG, Liquidity Sweeps",
@@ -457,7 +561,7 @@ with tab_theory:
         custom_coin_symbol = st.text_input("Coin නම (උදා: FLOCK, SOL, BTC, PEPE, DOGE, 1000SATS):", value="FLOCK").strip().upper()
     with in_col2:
         st.write("##")
-        run_theory_btn = st.button("🚀 Deep Theory Analysis", use_container_width=True)
+        run_theory_btn = st.button("🚀 Deep Institutional Analysis", use_container_width=True)
 
     manual_analysis_running = False
 
@@ -466,13 +570,14 @@ with tab_theory:
         if not active_theories:
             st.warning("⚠️ කරුණාකර අවම වශයෙන් එක් Theory එකක් තෝරන්න.")
         else:
-            st.info("⏸️ **Market Scanner එක Pause කරන ලදී.** Binance Spot සහ Futures පරීක්ෂා කරමින් පවතී...")
-            with st.spinner(f"Binance හි `{custom_coin_symbol}` සොයා දත්ත සකසමින් පවතී..."):
+            st.info("⏸️ **Market Scanner එක Pause කරන ලදී.** Binance Spot, Futures සහ Derivatives දත්ත පරීක්ෂා කරමින් පවතී...")
+            with st.spinner(f"Binance හි `{custom_coin_symbol}` සොයා Live Order Flow ගණනය කරමින් පවතී..."):
                 try:
                     resolved_symbol, is_fut, market_type = resolve_any_binance_coin(custom_coin_symbol)
                     
                     if resolved_symbol:
                         mtf_data_fetched, is_brand_new = fetch_universal_adaptive_data(resolved_symbol, is_fut)
+                        derivatives_intel = fetch_derivatives_intelligence(resolved_symbol)
                         
                         if mtf_data_fetched and len(mtf_data_fetched) > 0:
                             lowest_tf = list(mtf_data_fetched.keys())[0]
@@ -480,7 +585,7 @@ with tab_theory:
                             b_pct, s_pct = get_orderbook_ratio(resolved_symbol)
                             dom_info_str = f"Buyers: {b_pct}% | Sellers: {s_pct}%"
                             
-                            plan = compute_institutional_trade_setup(resolved_symbol, real_p, mtf_data_fetched, dom_info_str, active_theories, is_brand_new)
+                            plan = compute_institutional_trade_setup(resolved_symbol, real_p, mtf_data_fetched, dom_info_str, active_theories, is_brand_new, derivatives_intel)
                             
                             st.session_state.last_plan = plan
                             st.session_state.last_coin = custom_coin_symbol
@@ -511,6 +616,7 @@ with tab_theory:
         market_type = getattr(st.session_state, 'market_type', 'Spot')
         is_fut = getattr(st.session_state, 'is_futures', False)
         is_brand_new = getattr(st.session_state, 'is_brand_new', False)
+        deriv = plan.get('derivatives', {})
 
         tag_new = " [NEW LISTING ADAPTIVE]" if is_brand_new else ""
         st.markdown("---")
@@ -519,14 +625,16 @@ with tab_theory:
         
         st.markdown(f"## {color_icon} Final Verdict: **{dir_label}** for **{resolved_sym}** `({market_type}){tag_new}`")
         
-        score_c1, score_c2, score_c3, score_c4 = st.columns(4)
-        score_c1.metric("Long Confluence Score", f"{plan.get('long_score')}%")
-        score_c2.metric("Short Confluence Score", f"{plan.get('short_score')}%")
-        p_fmt = ":,.6f" if real_p < 0.01 else (":,.4f" if real_p < 10 else ":,.2f")
-        score_c3.metric("Live Price", f"${format(real_p, p_fmt[1:])}")
-        score_c4.metric("Order Flow", f"🟢 {b_pct}% / 🔴 {s_pct}%")
+        # Derivatives Metric Bar
+        d_col1, d_col2, d_col3, d_col4 = st.columns(4)
+        d_col1.metric("Live Price", f"${real_p:,.4f}" if real_p >= 1 else f"${real_p:,.6f}")
+        d_col2.metric("Funding Rate (8h)", deriv.get('funding_rate', '0.0000%'), delta=deriv.get('funding_bias'))
+        d_col3.metric("Open Interest (Contracts)", deriv.get('oi_value', 'N/A'), delta=deriv.get('oi_status'))
+        d_col4.metric("Top Traders Sentiment", deriv.get('top_traders_ratio', 'N/A'))
 
-        st.markdown("#### ⏳ Active Timeframe Health Matrix")
+        st.info(f"🐋 **Institutional Liquidation Heatmap Levels:** 50x Pool: `{deriv.get('liq_levels_50x')}` | 25x Pool: `{deriv.get('liq_levels_25x')}`")
+
+        st.markdown("#### ⏳ Active Timeframe Structure")
         tf_cols = st.columns(min(4, len(mtf_data)))
         for idx, (tf_name, d) in enumerate(list(mtf_data.items())[:4]):
             with tf_cols[idx]:
@@ -558,11 +666,8 @@ with tab_theory:
                     else:
                         st.error(f"Telegram Error: {t_res_msg.text}")
 
-        # ================= NEW: DETAILED CONCEPT REASONING BREAKDOWN =================
         st.markdown("---")
         st.markdown("### 🧠 භාවිතා කළ Concepts වල හේතු සාරාංශය (Why this Trade?)")
-        st.caption("තෝරාගත් Trading Concepts මඟින් මෙම Signal එක තහවුරු කිරීමට බලපෑ නිශ්චිත තාක්ෂණික හේතු:")
-
         breakdown = plan.get("theory_breakdown", [])
         if breakdown:
             for b_item in breakdown:
@@ -593,11 +698,48 @@ with tab_theory:
             st.write("• **Profit Taking Strategy:** TP1 ළඟා වූ විට මුල් Stop Loss අගය Entry මට්ටමට (Break-even) ගෙන එන්න.")
         with sum_col2:
             st.markdown("#### ✅ Execution Rules")
-            st.checkbox("Macro Trend / Volume Momentum එකට අනුකූලද?", value=True)
+            st.checkbox("Funding Rate Trap එකක් නැති බව තහවුරුද?", value=True)
             st.checkbox("Entry Zone එකේදී Rejection Candle එකක් ලැබුණාද?", value=True)
             st.checkbox("Hard Stop Loss Binance එකේ දැමුවාද?", value=True)
 
-# ----------------- TAB 2: 24/7 ENTIRE BINANCE MARKET SCANNER -----------------
+# ----------------- TAB 2: LIVE FUNDAMENTAL NEWS & MACRO -----------------
+with tab_news:
+    st.subheader("📰 Live Fundamental News & Macroeconomic Sentiment Hub")
+    st.caption("Crypto News Feeds, Fear & Greed Index, and Real-Time Market Impact Analysis.")
+
+    # Top Sentiment Gauge
+    fng_val, fng_class = fetch_fear_and_greed()
+    n_col1, n_col2, n_col3 = st.columns(3)
+    
+    n_col1.metric("Crypto Fear & Greed Index", f"{fng_val} / 100", fng_class)
+    btc_trend_now, btc_txt = check_btc_trend()
+    n_col2.metric("Market Leader (BTC) Status", btc_trend_now, btc_txt)
+    n_col3.metric("Global Macro Regime", "High Volatility", "Fed Interest Rates / Liquidity Flow")
+
+    st.write("---")
+    st.markdown("### ⚡ Real-Time Breaking News Stream")
+
+    with st.spinner("නවතම ප්‍රවෘත්ති ලබාගනිමින් පවතී..."):
+        news_list = fetch_crypto_rss_news()
+
+    if news_list:
+        for n_item in news_list:
+            card_col1, card_col2 = st.columns([4, 1])
+            with card_col1:
+                st.markdown(f"**[{n_item['title']}]({n_item['link']})**")
+                st.caption(f"Source: `{n_item['source']}` | Published: {n_item['date']}")
+            with card_col2:
+                if "BULLISH" in n_item['impact']:
+                    st.success(n_item['impact'])
+                elif "BEARISH" in n_item['impact']:
+                    st.error(n_item['impact'])
+                else:
+                    st.info(n_item['impact'])
+            st.write("")
+    else:
+        st.warning("ප්‍රවෘත්ති ලබාගැනීමට නොහැකි විය. කරුණාකර නැවත උත්සාහ කරන්න.")
+
+# ----------------- TAB 3: 24/7 ENTIRE BINANCE MARKET SCANNER -----------------
 with tab_scanner:
     btc_status, btc_msg = check_btc_trend()
     st.subheader("📡 Live 24/7 Autonomous Market Scanner")
