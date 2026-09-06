@@ -8,7 +8,7 @@ import html
 import time
 import xml.etree.ElementTree as ET
 
-st.set_page_config(page_title="Institutional Terminal & Instant Scalp Generator", layout="wide")
+st.set_page_config(page_title="Institutional Terminal & Risk Calculator", layout="wide")
 
 # ================= CONFIGURATION =================
 TELEGRAM_BOT_TOKEN = "8277509351:AAFgtRQ6jNApDmGjaZ4ARbqAHIu7us_MACk"
@@ -431,9 +431,10 @@ def check_1h_trend(raw_symbol, current_price, signal_type, is_futures=False):
         return True
 
 # ================= TABS NAVIGATION =================
-tab_theory, tab_scalp_gen, tab_div, tab_heatmap, tab_news, tab_scanner = st.tabs([
+tab_theory, tab_scalp_gen, tab_risk_calc, tab_div, tab_heatmap, tab_news, tab_scanner = st.tabs([
     "🏛️ Universal Coin & Indicators", 
     "⚡ Instant Scalp Signal Generator",
+    "🧮 Risk & Position Calculator",
     "📊 Auto Divergence Tracker",
     "🔥 Live Heatmaps & Sectors",
     "📰 Fundamental News Hub", 
@@ -598,7 +599,7 @@ with tab_theory:
 # ----------------- TAB 2: INSTANT SCALP SIGNAL GENERATOR -----------------
 with tab_scalp_gen:
     st.subheader("⚡ Instant Scalp Signal Generator & Top Coins Hub")
-    st.caption("இந்த මොහොතේ ස්කැල්ප් කිරීමට හොඳම (High Momentum & Volume Spike) කොයින් ස්වයංක්‍රීයව සොයා Full Signal Card එකක් සාදා දෙයි සහ Telegram වෙත යවයි.")
+    st.caption("ഈ මොහොතේ ස්කැල්ප් කිරීමට හොඳම (High Momentum & Volume Spike) කොයින් ස්වයංක්‍රීයව සොයා Full Signal Card එකක් සාදා දෙයි සහ Telegram වෙත යවයි.")
 
     if st.button("🚀 Find Best Scalp Coins & Auto-Send Signals", use_container_width=True):
         with st.spinner("Binance වෙළඳපොළ සෝදිසි කරමින් හොඳම Scalp Coins සොයා Telegram වෙත යවමින් පවතී..."):
@@ -635,7 +636,6 @@ with tab_scalp_gen:
                             
                             scalp_plan = compute_institutional_trade_setup(s_item['symbol'], s_item['price'], mtf_f, ob_str, ALL_THEORIES[:3], is_new, deriv_f, s_item['rsi'])
                             
-                            # Auto send to Telegram if not sent recently
                             if time.time() - global_state["last_scalp_time"].get(s_item['disp'], 0) > 3600:
                                 send_theory_telegram_alert(s_item['disp'], scalp_plan)
                                 global_state["last_scalp_time"][s_item['disp']] = time.time()
@@ -650,7 +650,36 @@ with tab_scalp_gen:
             except Exception as ex:
                 st.error(f"Error: {ex}")
 
-# ----------------- TAB 3: AUTO DIVERGENCE TRACKER -----------------
+# ----------------- TAB 3: RISK & POSITION CALCULATOR -----------------
+with tab_risk_calc:
+    st.subheader("🧮 Advanced Risk & Position Size Calculator")
+    st.caption("ඔබේ ගිණුමේ මුදල් සහ අවදානමට (Risk %) අනුව ගත යුතු නියමිත Position Size, Margin සහ Leverage ගණනය කර ගන්න.")
+
+    rc1, rc2 = st.columns(2)
+    with rc1:
+        acc_balance = st.number_input("Account Balance ($)", min_value=10.0, value=1000.0, step=50.0)
+        risk_pct = st.slider("Risk Tolerance (%)", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
+    with rc2:
+        entry_p = st.number_input("Entry Price ($)", min_value=0.000001, value=1.0, format="%.4f")
+        stop_p = st.number_input("Stop Loss Price ($)", min_value=0.000001, value=0.97, format="%.4f")
+
+    if st.button("🧮 Calculate Position Size", use_container_width=True):
+        if entry_p > 0 and stop_p > 0 and entry_p != stop_p:
+            dollar_risk = acc_balance * (risk_pct / 100.0)
+            price_diff_pct = abs(entry_p - stop_p) / entry_p
+            position_size_usd = dollar_risk / price_diff_pct
+            suggested_leverage = max(1, round(position_size_usd / acc_balance))
+            
+            st.success("✅ රස්ක් කළමනාකරණ ගණනය කිරීම සාර්ථකයි!")
+            r_col1, r_col2, r_col3, r_col4 = st.columns(4)
+            r_col1.metric("Dollar Risk ($)", f"${dollar_risk:,.2f}")
+            r_col2.metric("Total Position Size ($)", f"${position_size_usd:,.2f}")
+            r_col3.metric("Stop Loss Distance", f"{price_diff_pct*100:.2f}%")
+            r_col4.metric("Suggested Leverage", f"{suggested_leverage}x")
+        else:
+            st.error("⚠️ කරුණාකර නිවැරදි Entry සහ Stop Loss මිල ගණන් ඇතුළත් කරන්න.")
+
+# ----------------- TAB 4: AUTO DIVERGENCE TRACKER -----------------
 with tab_div:
     st.subheader("📊 Live Auto-Tracking RSI Divergence Detector")
     st.caption("වෙළඳපොළේ සියලුම ප්‍රධාන කාසි ස්වයංක්‍රීයව ස්කෑන් කර හැරවුම් ලක්ෂ්‍ය (Bullish & Bearish Divergences) තත්‍ය කාලීනව ලුහුබඳියි.")
@@ -693,13 +722,13 @@ with tab_div:
             else:
                 st.info("මෙම මොහොතේ ප්‍රබල Divergence සංඥා කිසිවක් හමු නොවීය.")
 
-# ----------------- TAB 4: LIVE HEATMAPS & SECTORS -----------------
+# ----------------- TAB 5: LIVE HEATMAPS & SECTORS -----------------
 with tab_heatmap:
     st.subheader("🔥 Live Crypto Market Performance & Sector Heatmaps")
     st.caption("Coinglass / TradingView Style Interactive Heatmap Widget displaying live capital flows across all major assets.")
     render_heatmap_widget()
 
-# ----------------- TAB 5: FUNDAMENTAL NEWS HUB -----------------
+# ----------------- TAB 6: FUNDAMENTAL NEWS HUB -----------------
 with tab_news:
     st.subheader("📰 Live Fundamental News & Macroeconomic Sentiment Hub")
     st.caption("Crypto News Feeds, Fear & Greed Index, and Real-Time Market Impact Analysis.")
@@ -726,7 +755,7 @@ with tab_news:
                 else: st.info(n_item['impact'])
             st.write("")
 
-# ----------------- TAB 6: 24/7 AUTONOMOUS SCANNER -----------------
+# ----------------- TAB 7: 24/7 AUTONOMOUS SCANNER -----------------
 with tab_scanner:
     btc_status, btc_msg = check_btc_trend()
     st.subheader("📡 Live 24/7 Autonomous Market Scanner")
