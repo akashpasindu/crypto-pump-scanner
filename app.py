@@ -8,7 +8,7 @@ import html
 import time
 import xml.etree.ElementTree as ET
 
-st.set_page_config(page_title="Institutional Terminal with Full Indicators", layout="wide")
+st.set_page_config(page_title="Institutional Terminal - Full Indicators & Reasons", layout="wide")
 
 # ================= CONFIGURATION =================
 TELEGRAM_BOT_TOKEN = "8277509351:AAFgtRQ6jNApDmGjaZ4ARbqAHIu7us_MACk"
@@ -33,12 +33,13 @@ def send_theory_telegram_alert(coin, plan):
 
     deriv = plan.get('derivatives', {})
     msg_html = (
-        f"🏛️ <b>Institutional Indicators & Concept Setup</b>\n\n"
+        f"🏛️ <b>Institutional Multi-Theory & Indicator Setup</b>\n\n"
         f"🪙 <b>Coin:</b> <code>{coin}</code>\n"
         f"🎯 <b>Verdict:</b> {icon} <b>{direction_val}</b> | <b>Score:</b> <code>{plan.get('confidence', 80)}%</code>\n"
-        f"📈 <b>RSI (14):</b> <code>{plan.get('rsi_val', 50)}</code> | <b>Order Book:</b> {plan.get('orderbook', 'N/A')}\n"
-        f"📊 <b>Funding:</b> <code>{deriv.get('funding_rate', '0%')}</code> | <b>OI:</b> <code>{deriv.get('oi_value', 'N/A')}</code>\n"
-        f"🐋 <b>Liquidation Pool (50x):</b> <code>{deriv.get('liq_levels_50x', 'N/A')}</code>\n\n"
+        f"📈 <b>RSI (14):</b> <code>{plan.get('rsi_val', 50)} / 100</code>\n"
+        f"📊 <b>Order Book Flow:</b> {plan.get('orderbook', 'N/A')}\n"
+        f"💸 <b>Funding Rate:</b> <code>{deriv.get('funding_rate', '0%')}</code> | <b>OI:</b> <code>{deriv.get('oi_value', 'N/A')}</code>\n"
+        f"🐋 <b>Whale Liq Pool (50x):</b> <code>{deriv.get('liq_levels_50x', 'N/A')}</code>\n\n"
         f"📥 <b>Entry Zone:</b> <code>${plan.get('entry_zone', 'Market')}</code>\n"
         f"🛑 <b>Stop Loss:</b> <code>${plan.get('stop_loss', 'N/A')}</code>\n"
         f"🎯 <b>TP1:</b> <code>${plan.get('tp1', 'N/A')}</code> | <b>TP2:</b> <code>${plan.get('tp2', 'N/A')}</code>\n\n"
@@ -244,7 +245,9 @@ def compute_institutional_trade_setup(symbol_resolved, current_price, mtf_data, 
         "rsi_val": rsi_val, "orderbook": orderbook_str,
         "theory_breakdown": theory_findings,
         "summary": f"RSI ({rsi_val}), Order Book ({orderbook_str}) සහ Confluence මඟින් {final_direction} තහවුරු වේ.",
-        "derivatives": derivatives
+        "derivatives": derivatives,
+        "long_plan": {"entry": f"{current_price*0.996:,.4f} - {current_price*1.003:,.4f}", "sl": f"{sl_long:,.4f}", "tp1": f"{tp1_l:,.4f}", "tp2": f"{tp2_l:,.4f}", "tp3": f"{tp3_l:,.4f}", "rr": "1:2.8"},
+        "short_plan": {"entry": f"{current_price*1.004:,.4f} - {current_price*0.997:,.4f}", "sl": f"{sl_short:,.4f}", "tp1": f"{tp1_s:,.4f}", "tp2": f"{tp2_s:,.4f}", "tp3": f"{tp3_s:,.4f}", "rr": "1:2.6"}
     }
 
 if "last_plan" not in st.session_state: st.session_state.last_plan = None
