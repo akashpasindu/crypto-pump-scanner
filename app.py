@@ -33,10 +33,9 @@ def send_telegram_alert(coin, price, change, volume_spike, rsi_val, tp1, tp2, sl
         "parse_mode": "Markdown",
         "disable_web_page_preview": True
     }
-    try:
-        requests.post(url, json=payload, timeout=5)
-    except Exception:
-        pass
+    response = requests.post(url, json=payload, timeout=5)
+    return response
+
 # ===================================================
 
 def calculate_rsi(series, period=14):
@@ -51,8 +50,25 @@ def calculate_rsi(series, period=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-st.title("🚀 Smart Crypto Pump Scanner Pro (Target Levels + RSI)")
-st.write("Binance Spot Market එකේ Volume Spikes සහ නිවැරදි Entry/Exit Targets නිරීක්ෂණය.")
+st.title("🚀 Smart Crypto Pump Scanner Pro")
+
+# --- ප්‍රධාන පිටුවේම ඇති Test Button එක ---
+col1, col2 = st.columns([1, 4])
+with col1:
+    if st.button("📲 Test Telegram Bot"):
+        try:
+            res = send_telegram_alert(
+                "BTC/USDT", "65000.00", "2.50", "2.2x", "58.4", 
+                "66625.00", "68250.00", "64025.00", "65500.00", "63200.00"
+            )
+            if res.status_code == 200:
+                st.success("✅ Telegram එකට මැසේජ් එක ගියා!")
+            else:
+                st.error(f"Telegram Error: {res.text}")
+        except Exception as e:
+            st.error(f"Error: {e}")
+
+st.write("---")
 
 exchange = ccxt.binance({'enableRateLimit': True})
 
@@ -60,10 +76,8 @@ exchange = ccxt.binance({'enableRateLimit': True})
 st.sidebar.header("Scanner Settings")
 volume_threshold = st.sidebar.slider("Volume Spike Multiplier", 1.2, 5.0, 1.5)
 price_threshold = st.sidebar.slider("අවම මිල වෙනස (%)", 0.5, 10.0, 1.2)
-
 rsi_min = st.sidebar.slider("අවම RSI අගය", 30, 60, 45)
 rsi_max = st.sidebar.slider("උපරිම RSI අගය", 65, 85, 75)
-
 limit_pairs = st.sidebar.number_input("පරීක්ෂා කළ යුතු Pairs ගණන", min_value=10, max_value=100, value=50)
 
 st.sidebar.markdown("---")
@@ -128,7 +142,6 @@ def scan_market():
                 and (rsi_min <= current_rsi <= rsi_max)
                 and real_time_price > current_ema
             ):
-                # Target සහ Stop Loss ගණනය කිරීම
                 tp1_val = real_time_price * 1.025
                 tp2_val = real_time_price * 1.050
                 sl_val = real_time_price * 0.985
@@ -138,7 +151,6 @@ def scan_market():
                 tp1_str = format(tp1_val, fmt)
                 tp2_str = format(tp2_val, fmt)
                 sl_str = format(sl_val, fmt)
-                
                 high_str = format(item['high'], fmt) if item['high'] else "N/A"
                 low_str = format(item['low'], fmt) if item['low'] else "N/A"
                 
@@ -170,16 +182,11 @@ def scan_market():
             
     return pd.DataFrame(alerts)
 
-# Sidebar Test Button
-if st.sidebar.button("Test Telegram Message"):
-    send_telegram_alert("BTC/USDT", "65000.00", "2.50", "2.2x", "58.4", "66625.00", "68250.00", "64025.00", "65500.00", "63200.00")
-    st.sidebar.success("Test Alert එක Telegram වෙත යවන ලදී!")
-
 if st.button("Manual Scan 🔍") or auto_refresh:
-    with st.spinner("දත්ත සහ Target Levels විශ්ලේෂණය කරමින් පවතී..."):
+    with st.spinner("දත්ත විශ්ලේෂණය කරමින් පවතී..."):
         results = scan_market()
         if not results.empty:
-            st.success(f"කාසි {len(results)} ක් හමුවිය! (Targets සමග Telegram Alert යවන ලදී)")
+            st.success(f"කාසි {len(results)} ක් හමුවිය!")
             st.dataframe(results, use_container_width=True)
         else:
             st.info("මේ මොහොතේ කොන්දේසි සපුරාලූ කාසි හමු නොවීය.")
