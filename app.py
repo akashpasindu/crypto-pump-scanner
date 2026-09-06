@@ -8,7 +8,7 @@ import html
 import time
 import xml.etree.ElementTree as ET
 
-st.set_page_config(page_title="Institutional Terminal & Auto-Divergence Tracker", layout="wide")
+st.set_page_config(page_title="Complete Institutional Terminal & Auto-Divergence Tracker", layout="wide")
 
 # ================= CONFIGURATION =================
 TELEGRAM_BOT_TOKEN = "8277509351:AAFgtRQ6jNApDmGjaZ4ARbqAHIu7us_MACk"
@@ -179,18 +179,12 @@ def detect_candlestick_pattern(df):
     if (upper_wick1 >= 1.5 * body1) and (c1 <= o1): return "Shooting Star 🌠"
     return "Volume Breakout ⚡"
 
-# ================= AUTO-TRACKING DIVERGENCE DETECTOR =================
 def check_auto_divergence(closes, rsi_series):
     if len(closes) < 15: return None
     p_cur, p_prev = closes.iloc[-1], closes.iloc[-5]
     r_cur, r_prev = rsi_series.iloc[-1], rsi_series.iloc[-5]
-    
-    # Bullish Divergence: Price making Lower Low, RSI making Higher Low
-    if p_cur < p_prev and r_cur > r_prev and r_cur < 45:
-        return "BULLISH_DIV"
-    # Bearish Divergence: Price making Higher High, RSI making Lower High
-    elif p_cur > p_prev and r_cur < r_prev and r_cur > 55:
-        return "BEARISH_DIV"
+    if p_cur < p_prev and r_cur > r_prev and r_cur < 45: return "BULLISH_DIV"
+    elif p_cur > p_prev and r_cur < r_prev and r_cur > 55: return "BEARISH_DIV"
     return None
 
 def fetch_fear_and_greed():
@@ -609,7 +603,7 @@ with tab_theory:
 # ----------------- TAB 2: AUTO DIVERGENCE TRACKER -----------------
 with tab_div:
     st.subheader("📊 Live Auto-Tracking RSI Divergence Detector")
-    st.caption("വෙළඳපොළේ සියලුම ප්‍රධාන කාසි ස්වයංක්‍රීයව ස්කෑන් කර හැරවුම් ලක්ෂ්‍ය (Bullish & Bearish Divergences) තත්‍ය කාලීනව ලුහුබඳියි.")
+    st.caption("වෙළඳපොළේ සියලුම ප්‍රධාන කාසි ස්වයංක්‍රීයව ස්කෑන් කර හැරවුම් ලක්ෂ්‍ය (Bullish & Bearish Divergences) තත්‍ය කාලීනව ලුහුබඳියි.")
 
     def scan_auto_divergences():
         div_results = []
@@ -633,7 +627,6 @@ with tab_div:
                                 "Coin": disp, "Type": "🟢 BULLISH DIV (Pump)" if div_type == "BULLISH_DIV" else "🔴 BEARISH DIV (Dump)",
                                 "Price": f"${cur_p:,.4f}" if cur_p >= 1 else f"${cur_p:,.6f}", "RSI": cur_rsi
                             })
-                            # Telegram Alert check
                             if time.time() - global_state["last_div_time"].get(disp, 0) > 7200:
                                 send_divergence_telegram_alert(div_type, disp, f"{cur_p:,.4f}", cur_rsi)
                                 global_state["last_div_time"][disp] = time.time()
@@ -722,7 +715,7 @@ with tab_scanner:
         for item in target_list:
             raw_symbol = item['symbol']
             is_fut = item['is_futures']
-            endpoint = FUTURES_BASE_URL if is_futures else SPOT_BASE_URL
+            endpoint = FUTURES_BASE_URL if is_fut else SPOT_BASE_URL
             display_symbol = f"{raw_symbol[:-4]}/USDT" if not raw_symbol.startswith("1000") else f"{raw_symbol}/USDT"
             real_time_price = item['last']
             if not real_time_price or raw_symbol in ['BTCUSDT', 'USDCUSDT', 'FDUSDUSDT']: continue
