@@ -1,5 +1,4 @@
 import streamlit as st
-import ccxt
 import pandas as pd
 import requests
 import time
@@ -33,9 +32,7 @@ def send_telegram_alert(coin, price, change, volume_spike, rsi_val, tp1, tp2, sl
         "parse_mode": "Markdown",
         "disable_web_page_preview": True
     }
-    response = requests.post(url, json=payload, timeout=5)
-    return response
-
+    return requests.post(url, json=payload, timeout=5)
 # ===================================================
 
 def calculate_rsi(series, period=14):
@@ -69,16 +66,6 @@ with col1:
 
 st.write("---")
 
-# Binance US/Cloud IP Block මඟහැරීම සඳහා Vision Public Data API භාවිතා කිරීම
-exchange = ccxt.binance({
-    'enableRateLimit': True,
-    'urls': {
-        'api': {
-            'public': 'https://data-api.binance.vision/api/v3',
-        }
-    }
-})
-
 # Sidebar Settings
 st.sidebar.header("Scanner Settings")
 volume_threshold = st.sidebar.slider("Volume Spike Multiplier", 1.2, 5.0, 1.5)
@@ -94,42 +81,66 @@ refresh_interval = st.sidebar.slider("නැවත Scan වන කාලය (ම
 if "sent_alerts" not in st.session_state:
     st.session_state.sent_alerts = set()
 
+# Cloud/US IP Block නොවී කෙලින්ම Data ලබාගැනීම
+BASE_URL = "https://data-api.binance.vision/api/v3"
+
 def scan_market():
-    markets = exchange.load_markets()
-    all_tickers = exchange.fetch_tickers()
+    alerts = []
     
+    # 1. Spot 24hr Tickers ලබාගැනීම
+    res = requests.get(f"{BASE_URL}/ticker/24hr", timeout=10)
+    if res.status_code != 200:
+        st.error("Binance Data API වෙත සම්බන්ධ වීමට නොහැකි විය.")
+        return pd.DataFrame()
+        
+    tickers = res.json()
+    
+    # USDT Spot පමණක් වෙන්කර ගැනීම
     active_usdt_pairs = []
-    for symbol, ticker in all_tickers.items():
-        if (
-            symbol.endswith('/USDT') 
-            and symbol in markets 
-            and markets[symbol].get('spot', False) 
-            and markets[symbol].get('active', True)
-            and ticker.get('quoteVolume') is not None
-        ):
+    for t in tickers:
+        symbol = t.get('symbol', '')
+        if symbol.endswith('USDT') and not symbol.endswith(('UPUSDT', 'DOWNUSDT', 'BEARUSDT', 'BULLUSDT')):
             active_usdt_pairs.append({
                 'symbol': symbol,
-                'quoteVolume': ticker['quoteVolume'],
-                'last': ticker.get('last'),
-                'high': ticker.get('high'),
-                'low': ticker.get('low')
+                'quoteVolume': float(t.get('quoteVolume', 0)),
+                'last': float(t.get('lastPrice', 0)),
+                'high': float(t.get('highPrice', 0)),
+                'low': float(t.get('lowPrice', 0))
             })
             
     sorted_pairs = sorted(active_usdt_pairs, key=lambda x: x['quoteVolume'], reverse=True)[:limit_pairs]
     
-    alerts = []
     progress_bar = st.progress(0)
     
     for i, item in enumerate(sorted_pairs):
-        symbol = item['symbol']
+        raw_symbol = item['symbol']
+        display_symbol = f"{raw_symbol[:-4]}/USDT"
         real_time_price = item['last']
         
         if not real_time_price:
             continue
             
         try:
-            ohlcv = exchange.fetch_ohlcv(symbol, timeframe='15m', limit=40)
-            df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            # 15m Klines කෙලින්ම Data API වෙතින් ගැනීම
+            kline_res = requests.get(
+                f"{BASE_URL}/klines", 
+                params={'symbol': raw_symbol, 'interval': '15m', 'limit': 40}, 
+                timeout=5
+            )
+            
+            if kline_res.status_code != 200:
+                continue
+                
+            ohlcv = kline_res.json()
+            # Binance klines format: [open_time, open, high, low, close, volume, ...]
+            df = pd.DataFrame(ohlcv, columns=[
+                'timestamp', 'open', 'high', 'low', 'close', 'volume', 
+                'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'
+            ])
+            
+            df['close'] = df['close'].astype(float)
+            df['open'] = df['open'].astype(float)
+            df['volume'] = df['volume'].astype(float)
             
             rsi_series = calculate_rsi(df['close'], period=14)
             ema_series = df['close'].ewm(span=20, adjust=False).mean()
@@ -158,15 +169,15 @@ def scan_market():
                 tp1_str = format(tp1_val, fmt)
                 tp2_str = format(tp2_val, fmt)
                 sl_str = format(sl_val, fmt)
-                high_str = format(item['high'], fmt) if item['high'] else "N/A"
-                low_str = format(item['low'], fmt) if item['low'] else "N/A"
+                high_str = format(item['high'], fmt)
+                low_str = format(item['low'], fmt)
                 
                 change_str = f"{live_price_change:.2f}"
                 spike_str = f"{round(current_volume / avg_volume, 1)}x"
                 rsi_str = f"{current_rsi:.1f}"
                 
                 alerts.append({
-                    "Coin": symbol,
+                    "Coin": display_symbol,
                     "Live Price ($)": price_str,
                     "15m Change (%)": f"+{change_str}%",
                     "RSI (14)": rsi_str,
@@ -175,17 +186,18 @@ def scan_market():
                     "Volume Spike": spike_str
                 })
                 
-                if symbol not in st.session_state.sent_alerts:
+                if display_symbol not in st.session_state.sent_alerts:
                     send_telegram_alert(
-                        symbol, price_str, change_str, spike_str, rsi_str, 
+                        display_symbol, price_str, change_str, spike_str, rsi_str, 
                         tp1_str, tp2_str, sl_str, high_str, low_str
                     )
-                    st.session_state.sent_alerts.add(symbol)
+                    st.session_state.sent_alerts.add(display_symbol)
                     
         except Exception:
             continue
         finally:
             progress_bar.progress((i + 1) / len(sorted_pairs))
+            time.sleep(0.02)
             
     return pd.DataFrame(alerts)
 
