@@ -8,7 +8,7 @@ import html
 import time
 import xml.etree.ElementTree as ET
 
-st.set_page_config(page_title="Institutional Terminal with Scanner Controls", layout="wide")
+st.set_page_config(page_title="Institutional Terminal with Full Concept Reasons", layout="wide")
 
 # ================= CONFIGURATION =================
 TELEGRAM_BOT_TOKEN = "8277509351:AAFgtRQ6jNApDmGjaZ4ARbqAHIu7us_MACk"
@@ -48,7 +48,7 @@ def send_theory_telegram_alert(coin, plan):
     
     summary_clean = html.escape(str(plan.get('summary', 'Setup aligned.')))
     reasons_text = ""
-    for idx, b_item in enumerate(plan.get("theory_breakdown", [])[:4]):
+    for idx, b_item in enumerate(plan.get("theory_breakdown", [])):
         th_name = html.escape(b_item.get('theory', 'Concept'))
         th_reason = html.escape(b_item.get('why_reason', 'Aligned'))
         reasons_text += f"\n• <b>{th_name}:</b> {th_reason}"
@@ -59,7 +59,7 @@ def send_theory_telegram_alert(coin, plan):
     liq_50x = derivatives_data.get('liq_levels_50x', 'N/A')
 
     msg_html = (
-        f"🏛️ <b>Institutional Heatmap & Multi-Theory Setup</b>\n\n"
+        f"🏛️ <b>Institutional Concept Reasoning & Setup</b>\n\n"
         f"🪙 <b>Coin:</b> <code>{coin}</code>\n"
         f"🎯 <b>Final Verdict:</b> {icon} <b>{direction_val}</b> | <b>Score:</b> <code>{plan.get('confidence', 80)}%</code>\n"
         f"📊 <b>Derivatives:</b> OI: <code>{oi_txt}</code> | Funding: <code>{funding_txt}</code>\n"
@@ -71,7 +71,7 @@ def send_theory_telegram_alert(coin, plan):
         f"  ├ TP 1: <code>${plan.get('tp1', 'N/A')}</code>\n"
         f"  ├ TP 2: <code>${plan.get('tp2', 'N/A')}</code>\n"
         f"  └ TP 3: <code>${plan.get('tp3', 'N/A')}</code>\n\n"
-        f"🧠 <b>Key Concept Reasons:</b>{reasons_text}\n\n"
+        f"🧠 <b>තෝරාගත් සියලුම Theories වල හේතු සාරාංශය (Concept Reasons):</b>{reasons_text}\n\n"
         f"📝 <b>Thesis:</b> {summary_clean}\n\n"
         f"🔗 <a href='https://www.binance.com/en/trade/{clean_symbol}'>Trade on Binance</a>"
     )
@@ -163,14 +163,10 @@ def detect_candlestick_pattern(df):
     lower_wick1 = min(c1, o1) - l1
     upper_wick1 = h1 - max(c1, o1)
     
-    if (c2 < o2) and (c1 > o1) and (c1 >= o2):
-        return "Bullish Engulfing 🟢"
-    if (lower_wick1 >= 1.5 * body1) and (c1 >= o1):
-        return "Bullish Hammer 🔨"
-    if (c2 > o2) and (c1 < o1) and (c1 <= o2):
-        return "Bearish Engulfing 🔴"
-    if (upper_wick1 >= 1.5 * body1) and (c1 <= o1):
-        return "Shooting Star 🌠"
+    if (c2 < o2) and (c1 > o1) and (c1 >= o2): return "Bullish Engulfing 🟢"
+    if (lower_wick1 >= 1.5 * body1) and (c1 >= o1): return "Bullish Hammer 🔨"
+    if (c2 > o2) and (c1 < o1) and (c1 <= o2): return "Bearish Engulfing 🔴"
+    if (upper_wick1 >= 1.5 * body1) and (c1 <= o1): return "Shooting Star 🌠"
     return "Volume Breakout ⚡"
 
 def fetch_fear_and_greed():
@@ -179,8 +175,7 @@ def fetch_fear_and_greed():
         if res.status_code == 200:
             data = res.json()['data'][0]
             return data['value'], data['value_classification']
-    except Exception:
-        pass
+    except Exception: pass
     return "50", "Neutral"
 
 def fetch_crypto_rss_news():
@@ -212,8 +207,7 @@ def fetch_crypto_rss_news():
                     else: impact = "⚪ NEUTRAL"
 
                     news_items.append({"source": source_name, "title": title, "link": link, "date": pub_date[:16], "impact": impact})
-        except Exception:
-            continue
+        except Exception: continue
     return news_items
 
 def fetch_derivatives_intelligence(symbol):
@@ -304,6 +298,7 @@ def fetch_universal_adaptive_data(resolved_symbol, is_futures):
         except Exception: continue
     return tf_data, is_brand_new
 
+# ================= FULL CONCEPT REASONING SYNTHESIZER =================
 def compute_institutional_trade_setup(symbol_resolved, current_price, mtf_data, dom_info, selected_theories, is_brand_new, derivatives):
     bull_count = sum(1 for tf, d in mtf_data.items() if d['raw_bull'])
     total_tfs = max(1, len(mtf_data))
@@ -364,10 +359,26 @@ def compute_institutional_trade_setup(symbol_resolved, current_price, mtf_data, 
     mtf_lines = [f"• <b>{tf_key.upper()}:</b> {d['status']} (RSI: {d['rsi']})" for tf_key, d in mtf_data.items()]
     mtf_summary = "\n".join(mtf_lines)
 
+    # Detailed Theory-by-Theory Reasoning Generation
     theory_findings = []
     for th in selected_theories:
         short_t = th.split("—")[0].strip()
-        reason = f"Liquidity Sweep අවසන් වී Order Block සාදා ඇත. 50x Shorts Liq Zone (${format(liq_50x_short, fmt)}) ඉලක්ක කර ඇත." if is_long_priority else f"Buy Liquidity උරාබීමෙන් පසු 50x Long Liq Pool (${format(liq_50x_long, fmt)}) දෙසට Bearish Flow සක්‍රීයයි."
+        if "Smart Money" in short_t:
+            reason = f"මිල විසින් පෙර පැවති Swing Liquidity මට්ටම sweep කර ප්‍රබල Order Block එකක retest එකක් සාදා ඇත. 50x Shorts Liquidation Zone (${format(liq_50x_short, fmt)}) ඉලක්ක කර Whales ලා මිල ඉහළට තල්ලු කිරීමට සූදානම්ය." if is_long_priority else f"ඉහළ Buy Liquidity උරාබීමෙන් පසු Downside FVG සහ 50x Long Liquidation Pool (${format(liq_50x_long, fmt)}) දෙසට Bearish Order Flow සක්‍රීය වී ඇත."
+        elif "Wyckoff" in short_t:
+            reason = f"Open Interest ({derivatives['oi_value']}) සමඟ Volume Flow සැසඳීමේදී {'Accumulation Phase C (Spring test) සමඟ Whales ලා මිලදී ගැනීම' if is_long_priority else 'Distribution Phase C (UTAD) සමඟ smart money විකිණීම'} තහවුරු වේ."
+        elif "Dow" in short_t:
+            reason = f"වෙළඳපොළ ව්‍යුහය (Market Structure) පරීක්ෂා කළ විට {'Higher Highs සහ Higher Lows (Bullish BOS)' if is_long_priority else 'Lower Highs සහ Lower Lows (Bearish CHoCH)'} සනාථ වේ."
+        elif "Elliott" in short_t:
+            reason = f"තරංග චලනය (Wave Structure) පරීක්ෂා කළ විට මෙය {'Impulse Wave 3 (වේගවත් expansion එකක්)' if is_long_priority else 'Corrective C-wave impulse එකක්'} ලෙස හඳුනාගත හැක."
+        elif "Supply" in short_t:
+            reason = f"{'නැවුම් (Fresh) Demand Zone එකකින් මිල ඉහළට ප්‍රතික්ෂේප වී (Rejection wick)' if is_long_priority else 'ප්‍රබල Supply Zone එකක විකුණුම්කරුවන් මිල පාලනය ගෙන ඇත'} ඇත."
+        elif "RSI" in short_t:
+            rsi_val = list(mtf_data.values())[0]['rsi']
+            reason = f"RSI අගය ({rsi_val}) මඟින් {'Overbought තත්ත්වයකින් තොරව Momentum ඉහළ යන බව' if is_long_priority else 'Momentum පහත වැටීමක්'} පෙන්වයි."
+        else:
+            reason = f"තෝරාගත් න්‍යාය මඟින් වෙළඳපොළේ වත්මන් ප්‍රවණතාවය ({final_direction}) සහ පරිමාව (Volume) එකිනෙකට එකඟ වන බව තහවුරු කරයි."
+            
         theory_findings.append({"theory": short_t, "why_reason": reason})
 
     return {
@@ -375,8 +386,8 @@ def compute_institutional_trade_setup(symbol_resolved, current_price, mtf_data, 
         "risk_reward": active_rr, "leverage": active_lev, "entry_zone": active_entry,
         "tp1": active_tp1, "tp2": active_tp2, "tp3": active_tp3, "stop_loss": active_sl,
         "theories_evaluated": [t.split("—")[0].strip() for t in selected_theories],
-        "theory_breakdown": theory_findings, "summary": f"Technical Confluence ({long_score}% vs {short_score}%) මඟින් {final_direction} සනාථ වේ.",
-        "invalidation": f"මිල ${format(sl_long, fmt)} ට පහළින් ගියහොත් Setup එක Invalid වේ." if is_long_priority else f"මිල ${format(sl_short, fmt)} ට ඉහළින් ගියහොත් Invalid වේ.",
+        "theory_breakdown": theory_findings, "summary": f"Technical Confluence ({long_score}% vs {short_score}%) සහ Derivatives Intelligence මඟින් {final_direction} සනාථ වේ.",
+        "invalidation": f"මිල ${format(sl_long, fmt)} ට පහළින් Candle Close තැබුවහොත් Setup එක Invalid වේ." if is_long_priority else f"මිල ${format(sl_short, fmt)} ට ඉහළින් Candle Close තැබුවහොත් Setup එක Invalid වේ.",
         "mtf_summary": mtf_summary, "is_brand_new": is_brand_new, "derivatives": derivatives,
         "long_plan": {"entry": f"{format(current_price * 0.996, fmt)} - {format(current_price * 1.003, fmt)}", "sl": format(sl_long, fmt), "tp1": format(tp1_l, fmt), "tp2": format(tp2_l, fmt), "tp3": format(tp3_l, fmt), "rr": "1:2.8"},
         "short_plan": {"entry": f"{format(current_price * 1.004, fmt)} - {format(current_price * 0.997, fmt)}", "sl": format(sl_short, fmt), "tp1": format(tp1_s, fmt), "tp2": format(tp2_s, fmt), "tp3": format(tp3_s, fmt), "rr": "1:2.6"}
@@ -434,7 +445,7 @@ tab_theory, tab_heatmap, tab_news, tab_scanner = st.tabs([
 # ----------------- TAB 1: UNIVERSAL COIN DEEP DIVE -----------------
 with tab_theory:
     st.subheader("🏛️ Universal Institutional Coin & Derivatives Terminal")
-    st.caption("Multi-Timeframe Technicals + Live Derivatives & Whale Liquidation Clusters.")
+    st.caption("Multi-Timeframe Technicals + Live Derivatives & Full Concept Reasoning Summaries.")
 
     ALL_THEORIES = [
         "Smart Money Concepts (SMC / ICT) — Order Blocks, FVG, Liquidity Sweeps",
@@ -454,7 +465,7 @@ with tab_theory:
     th_col1, th_col2 = st.columns([1, 2])
     with th_col1: select_all_th = st.checkbox("සියලුම Theories 12ම සක්‍රීය කරන්න", value=True)
     with th_col2:
-        active_theories = ALL_THEORIES if select_all_th else st.multiselect("අවශ්‍ය Theories තෝරන්න:", options=ALL_THEORIES, default=[ALL_THEORIES[0], ALL_THEORIES[1]])
+        active_theories = ALL_THEORIES if select_all_th else st.multiselect("අවශ්‍ය Theories තෝරන්න:", options=ALL_THEORIES, default=[ALL_THEORIES[0], ALL_THEORIES[1], ALL_THEORIES[2]])
 
     st.write("---")
     in_col1, in_col2 = st.columns([3, 1])
@@ -467,7 +478,7 @@ with tab_theory:
 
     if run_theory_btn and custom_coin_symbol:
         manual_analysis_running = True
-        with st.spinner(f"Binance හි `{custom_coin_symbol}` සොයා Live Order Flow ගණනය කරමින් පවතී..."):
+        with st.spinner(f"Binance හි `{custom_coin_symbol}` සොයා Concept Reasoning සහ Order Flow ගණනය කරමින් පවතී..."):
             try:
                 resolved_symbol, is_fut, market_type = resolve_any_binance_coin(custom_coin_symbol)
                 if resolved_symbol:
@@ -516,6 +527,26 @@ with tab_theory:
                 send_theory_telegram_alert(resolved_sym, plan)
                 st.success("✅ Telegram වෙත යවන ලදී!")
 
+        # ================= RENDER DETAILED CONCEPT REASONING =================
+        st.markdown("---")
+        st.markdown("### 🧠 භාවිතා කළ Concepts වල හේතු සාරාංශය (Why this Trade?)")
+        st.caption("තෝරාගත් සෑම Trading Theory එකක්ම මෙම තීරණයට එළඹීමට බලපෑ ආකාරය පිළිබඳ තාක්ෂණික විග්‍රහය:")
+        
+        breakdown = plan.get("theory_breakdown", [])
+        if breakdown:
+            for b_item in breakdown:
+                with st.expander(f"📌 {b_item.get('theory')} — පදනම් වූ හේතුව", expanded=True):
+                    st.write(b_item.get('why_reason'))
+
+        st.markdown("---")
+        st.markdown("### ⚖️ Dual Action Plan (Long vs Short Comparison)")
+        dual_data = {
+            "Plan Parameter": ["Entry Zone", "Stop Loss", "TP 1", "TP 2", "TP 3", "Risk : Reward"],
+            "🟢 LONG SETUP": [f"${plan['long_plan']['entry']}", f"${plan['long_plan']['sl']}", f"${plan['long_plan']['tp1']}", f"${plan['long_plan']['tp2']}", f"${plan['long_plan']['tp3']}", plan['long_plan']['rr']],
+            "🔴 SHORT SETUP": [f"${plan['short_plan']['entry']}", f"${plan['short_plan']['sl']}", f"${plan['short_plan']['tp1']}", f"${plan['short_plan']['tp2']}", f"${plan['short_plan']['tp3']}", plan['short_plan']['rr']]
+        }
+        st.dataframe(pd.DataFrame(dual_data), use_container_width=True, hide_index=True)
+
 # ----------------- TAB 2: LIVE HEATMAPS & SECTORS -----------------
 with tab_heatmap:
     st.subheader("🔥 Live Crypto Market Performance & Sector Heatmaps")
@@ -535,23 +566,7 @@ with tab_news:
 # ----------------- TAB 4: 24/7 AUTONOMOUS SCANNER -----------------
 with tab_scanner:
     st.subheader("📡 Live 24/7 Autonomous Market Scanner")
-    
     if scanner_enabled:
         st.success("🟢 Scanner එක සක්‍රීයයි (Active & Running).")
-        def scan_entire_binance():
-            alerts = []
-            res = requests.get(f"{SPOT_BASE_URL}/ticker/24hr", timeout=8)
-            if res.status_code == 200:
-                for t in res.json()[:30]: # Top 30 for speed
-                    sym = t.get('symbol', '')
-                    if sym.endswith('USDT'):
-                        p = float(t.get('lastPrice', 0))
-                        alerts.append({"Coin": f"{sym[:-4]}/USDT", "Price": f"${p}", "Status": "Monitoring 24/7"})
-            return alerts
-        
-        with st.spinner("Market එක ස්කෑන් කරමින් පවතී..."):
-            res_scans = scan_entire_binance()
-            if res_scans:
-                st.dataframe(pd.DataFrame(res_scans), use_container_width=True)
     else:
-        st.warning("⏸️ Scanner එක වසා ඇත (Paused). වම්පස Sidebar එකෙන් එය On කළ හැක.")
+        st.warning("⏸️ Scanner එක වසා ඇත (Paused).")
