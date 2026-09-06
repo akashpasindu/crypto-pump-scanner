@@ -143,7 +143,7 @@ st.sidebar.markdown("---")
 auto_refresh = st.sidebar.checkbox("ස්වයංක්‍රීයව Scan වන්න (Auto-Refresh)", value=False)
 refresh_interval = st.sidebar.slider("නැවත Scan වන කාලය (මිනිත්තු)", 1, 10, 2)
 
-# Global State Tracking
+# Session States
 if "last_alert_time" not in st.session_state:
     st.session_state.last_alert_time = {}
 if "paper_trades" not in st.session_state:
@@ -176,6 +176,31 @@ def check_1h_trend(raw_symbol, current_price):
     except Exception:
         return True
 
+def update_paper_trades(latest_prices):
+    for trade in st.session_state.paper_trades:
+        if trade["Status"] == "ACTIVE":
+            sym = trade["Raw_Symbol"]
+            if sym in latest_prices:
+                current_p = latest_prices[sym]
+                entry_p = trade["Entry ($)"]
+                tp1_p = trade["TP1 ($)"]
+                sl_p = trade["SL ($)"]
+                
+                # Check TP / SL hits
+                if current_p >= tp1_p:
+                    trade["Status"] = "CLOSED (TP1 HIT 🎯)"
+                    trade["PnL ($)"] = round(((tp1_p - entry_p) / entry_p) * trade["Allocated ($)"], 2)
+                    trade["PnL (%)"] = f"+{round(((tp1_p - entry_p) / entry_p) * 100, 2)}%"
+                elif current_p <= sl_p:
+                    trade["Status"] = "CLOSED (SL HIT 🛑)"
+                    trade["PnL ($)"] = round(((sl_p - entry_p) / entry_p) * trade["Allocated ($)"], 2)
+                    trade["PnL (%)"] = f"{round(((sl_p - entry_p) / entry_p) * 100, 2)}%"
+                else:
+                    live_pnl_val = ((current_p - entry_p) / entry_p) * trade["Allocated ($)"]
+                    trade["PnL ($)"] = round(live_pnl_val, 2)
+                    prefix = "+" if live_pnl_val >= 0 else ""
+                    trade["PnL (%)"] = f"{prefix}{round(((current_p - entry_p) / entry_p) * 100, 2)}%"
+
 def scan_market():
     btc_safe, btc_msg = check_btc_trend()
     if enable_btc_filter:
@@ -193,16 +218,24 @@ def scan_market():
         
     tickers = res.json()
     active_usdt_pairs = []
+    price_dict = {}
+    
     for t in tickers:
         symbol = t.get('symbol', '')
+        last_price = float(t.get('lastPrice', 0))
+        price_dict[symbol] = last_price
+        
         if symbol.endswith('USDT') and not symbol.endswith(('UPUSDT', 'DOWNUSDT', 'BEARUSDT', 'BULLUSDT')):
             active_usdt_pairs.append({
                 'symbol': symbol,
                 'quoteVolume': float(t.get('quoteVolume', 0)),
-                'last': float(t.get('lastPrice', 0)),
+                'last': last_price,
                 'high': float(t.get('highPrice', 0)),
                 'low': float(t.get('lowPrice', 0))
             })
+            
+    # Update Paper Trades with fresh prices
+    update_paper_trades(price_dict)
             
     sorted_pairs = sorted(active_usdt_pairs, key=lambda x: x['quoteVolume'], reverse=True)[:limit_pairs]
     progress_bar = st.progress(0)
@@ -257,7 +290,6 @@ def scan_market():
                 if enable_ob_filter and buyer_ratio < 55.0:
                     continue
 
-                # Dynamic ATR Levels
                 sl_val = max(0.000001, real_time_price - (atr_val * 1.5))
                 tp1_val = real_time_price + (atr_val * 2.5)
                 tp2_val = real_time_price + (atr_val * 4.0)
@@ -295,14 +327,17 @@ def scan_market():
                     )
                     st.session_state.last_alert_time[display_symbol] = current_time
                     
-                    # Paper Trading Logger
+                    # Auto Open Virtual Paper Trade
                     st.session_state.paper_trades.insert(0, {
                         "Time": time.strftime("%H:%M:%S"),
+                        "Raw_Symbol": raw_symbol,
                         "Coin": display_symbol,
                         "Entry ($)": real_time_price,
                         "TP1 ($)": tp1_val,
                         "SL ($)": sl_val,
-                        "Allocated ($)": 100,
+                        "Allocated ($)": 100.0,
+                        "PnL ($)": 0.0,
+                        "PnL (%)": "0.0%",
                         "Status": "ACTIVE"
                     })
                     
@@ -314,8 +349,8 @@ def scan_market():
             
     return alerts
 
-# Dashboard Tabs
-tab1, tab2 = st.tabs(["📡 Live Scanner", "📝 Paper Trading & Alert History"])
+# Dashboard Layout
+tab1, tab2 = st.tabs(["📡 Live Scanner", "📊 Live Paper Trading & Win-Rate"])
 
 with tab1:
     if st.button("Manual Scan 🔍") or auto_refresh:
@@ -337,15 +372,32 @@ with tab1:
                 st.info("මේ මොහොතේ කොන්දේසි සපුරාලූ කාසි හමු නොවීය.")
 
 with tab2:
-    st.subheader("📋 Virtual Paper Trades ($100 per Alert)")
-    if st.session_state.paper_trades:
-        paper_df = pd.DataFrame(st.session_state.paper_trades)
-        st.dataframe(paper_df, use_container_width=True)
+    st.subheader("📈 Paper Trading Performance Dashboard")
+    trades = st.session_state.paper_trades
+    
+    if trades:
+        total_trades = len(trades)
+        wins = sum(1 for t in trades if "TP1 HIT" in t["Status"])
+        losses = sum(1 for t in trades if "SL HIT" in t["Status"])
+        closed_trades = wins + losses
+        win_rate = (wins / closed_trades * 100) if closed_trades > 0 else 0.0
+        total_pnl = sum(t["PnL ($)"] for t in trades)
+        
+        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+        m_col1.metric("Total Trades", total_trades)
+        m_col2.metric("Win Rate", f"{win_rate:.1f}%", f"{wins}W - {losses}L")
+        m_col3.metric("Total PnL ($)", f"${total_pnl:.2f}", delta=f"{total_pnl:.2f}")
+        m_col4.metric("Active Trades", total_trades - closed_trades)
+        
+        st.write("---")
+        display_paper = pd.DataFrame(trades).drop(columns=['Raw_Symbol'])
+        st.dataframe(display_paper, use_container_width=True)
+        
         if st.button("Clear Trade History"):
             st.session_state.paper_trades = []
             st.rerun()
     else:
-        st.info("තවමත් Alerts කිසිවක් සටහන් වී නොමැත. Alert එකක් ආ සැණින් ස්වයංක්‍රීයව මෙහි සටහන් වේ.")
+        st.info("තවමත් Alerts කිසිවක් සටහන් වී නොමැත. Alert එකක් පැමිණි විගස $100 ක අතථ්‍ය Trade එකක් මෙහි ස්වයංක්‍රීයව විවෘත වේ.")
 
 if auto_refresh:
     time.sleep(refresh_interval * 60)
