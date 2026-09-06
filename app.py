@@ -6,25 +6,27 @@ import json
 import re
 import time
 
-st.set_page_config(page_title="Crypto Pump Scanner Pro Max (AI Powered)", layout="wide")
+st.set_page_config(page_title="Crypto Pump & Dump Scanner Pro Max", layout="wide")
 
 # ================= CONFIGURATION =================
 TELEGRAM_BOT_TOKEN = "8277509351:AAFgtRQ6jNApDmGjaZ4ARbqAHIu7us_MACk"
 TELEGRAM_CHAT_ID = "7929509451"
 DEFAULT_GEMINI_KEY = "AQ.Ab8RN6Kov34e2FAiapWmBpeAtkyAint2-EaxdTwngH8RxeagKQ"
 
-def send_telegram_alert(coin, price, change, volume_spike, rsi_val, tp1, tp2, sl, high_24h, low_24h, buyer_ratio, pattern_name, ai_verdict):
+def send_telegram_alert(signal_type, coin, price, change, volume_spike, rsi_val, tp1, tp2, sl, high_24h, low_24h, dominance_info, pattern_name, ai_verdict):
     clean_symbol = coin.replace('/', '_')
+    icon = "🚨 *Smart Crypto Pump Alert (LONG)*" if signal_type == "PUMP" else "🩸 *Smart Crypto Dump Alert (SHORT)*"
+    
     message = (
-        f"🚨 *Smart Crypto Pump Alert (AI Analyzed)!*\n\n"
+        f"{icon}\n\n"
         f"🪙 *Coin:* `{coin}`\n"
         f"🤖 *AI Verdict:* `{ai_verdict}`\n"
         f"🕯️ *Pattern:* `{pattern_name}`\n"
         f"💵 *Entry Price:* `${price}`\n"
-        f"📈 *15m Change:* `+{change}%`\n"
+        f"📊 *15m Change:* `{change}%`\n"
         f"📊 *Volume Spike:* `{volume_spike}`\n"
         f"🎯 *RSI (14):* `{rsi_val}`\n"
-        f"🐋 *Buyer Dominance:* `{buyer_ratio}%`\n\n"
+        f"⚖️ *Dominance:* `{dominance_info}`\n\n"
         f"🎯 *Dynamic ATR Targets:*\n"
         f"  ├ TP 1: `${tp1}`\n"
         f"  └ TP 2: `${tp2}`\n\n"
@@ -42,22 +44,24 @@ def send_telegram_alert(coin, price, change, volume_spike, rsi_val, tp1, tp2, sl
     return requests.post(url, json=payload, timeout=5)
 
 # ================= AI ANALYZER ENGINE =================
-def analyze_with_ai(coin, price, change, volume_spike, rsi, pattern, buyer_ratio, btc_status, api_key):
+def analyze_with_ai(signal_type, coin, price, change, volume_spike, rsi, pattern, dom_info, btc_status, api_key):
     if not api_key:
         return "⚠️ No API Key", "API Key ලබා දී නොමැත", "Medium"
     
+    trade_side = "LONG / BUY" if signal_type == "PUMP" else "SHORT / SELL"
     prompt = (
-        "Act as a professional Crypto Day Trader. Analyze this 15-minute pump setup and decide if it is safe to enter:\n"
+        f"Act as a professional Crypto Trader. Analyze this 15-minute {signal_type} ({trade_side}) setup and decide if it is safe:\n"
         f"- Coin: {coin}\n"
+        f"- Signal Type: {signal_type} ({trade_side})\n"
         f"- Live Price: ${price}\n"
-        f"- 15m Price Surge: +{change}%\n"
+        f"- 15m Surge/Drop: {change}%\n"
         f"- Volume Multiplier: {volume_spike}\n"
         f"- RSI (14): {rsi}\n"
         f"- Candlestick Pattern: {pattern}\n"
-        f"- Order Book Buyer Dominance: {buyer_ratio}%\n"
-        f"- Overall Market (BTC) Status: {btc_status}\n\n"
+        f"- Dominance: {dom_info}\n"
+        f"- Market (BTC) Status: {btc_status}\n\n"
         "Respond ONLY in valid JSON format: "
-        '{"verdict": "STRONG BUY", "confidence": 85, "reason": "Clear breakout with high buyer volume", "risk": "Low"}'
+        '{"verdict": "STRONG ENTER", "confidence": 85, "reason": "High volume with aligned trend", "risk": "Low"}'
     )
     
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
@@ -115,7 +119,7 @@ def render_tradingview_widget(symbol_raw):
 
 def detect_candlestick_pattern(df):
     if len(df) < 5:
-        return "Normal Breakout"
+        return "Normal Candlestick"
     c1, o1, h1, l1 = df['close'].iloc[-1], df['open'].iloc[-1], df['high'].iloc[-1], df['low'].iloc[-1]
     c2, o2 = df['close'].iloc[-2], df['open'].iloc[-2]
     c3, o3 = df['close'].iloc[-3], df['open'].iloc[-3]
@@ -123,6 +127,7 @@ def detect_candlestick_pattern(df):
     lower_wick1 = min(c1, o1) - l1
     upper_wick1 = h1 - max(c1, o1)
     
+    # Bullish
     if (c2 < o2) and (c1 > o1) and (c1 >= o2) and (o1 <= c2):
         return "Bullish Engulfing 🟢"
     if (lower_wick1 >= 2 * body1) and (upper_wick1 <= body1 * 0.5) and (c1 >= o1):
@@ -131,6 +136,17 @@ def detect_candlestick_pattern(df):
         return "Three White Soldiers 🚀"
     if (c3 < o3) and (abs(c2 - o2) < abs(c3 - o3) * 0.4) and (c1 > o1) and (c1 > (o3 + c3) / 2):
         return "Morning Star 🌟"
+        
+    # Bearish
+    if (c2 > o2) and (c1 < o1) and (c1 <= o2) and (o1 >= c2):
+        return "Bearish Engulfing 🔴"
+    if (upper_wick1 >= 2 * body1) and (lower_wick1 <= body1 * 0.5) and (c1 <= o1):
+        return "Shooting Star 🌠"
+    if (c1 < o1) and (c2 < o2) and (c3 < o3) and (c1 < c2 < c3):
+        return "Three Black Crows 🩸"
+    if (c3 > o3) and (abs(c2 - o2) < abs(c3 - o3) * 0.4) and (c1 < o1) and (c1 < (o3 + c3) / 2):
+        return "Evening Star 🌑"
+
     return "Volume Breakout ⚡"
 
 def calculate_rsi(series, period=14):
@@ -151,62 +167,61 @@ def calculate_atr(df, period=14):
 
 BASE_URL = "https://data-api.binance.vision/api/v3"
 
-def get_orderbook_buyer_ratio(raw_symbol):
+def get_orderbook_ratio(raw_symbol):
     try:
         res = requests.get(f"{BASE_URL}/depth", params={'symbol': raw_symbol, 'limit': 20}, timeout=4)
         if res.status_code != 200:
-            return 50.0
+            return 50.0, 50.0
         data = res.json()
         bids = sum([float(b[1]) for b in data.get('bids', [])])
         asks = sum([float(a[1]) for a in data.get('asks', [])])
         total = bids + asks
-        return round((bids / total) * 100, 1) if total > 0 else 50.0
+        if total == 0:
+            return 50.0, 50.0
+        buyer_pct = round((bids / total) * 100, 1)
+        seller_pct = round((asks / total) * 100, 1)
+        return buyer_pct, seller_pct
     except Exception:
-        return 50.0
+        return 50.0, 50.0
 
-st.title("🚀 Smart Crypto Pump Scanner Pro Max (AI Enabled)")
+st.title("🚀 Smart Crypto Pump & Dump Scanner Pro Max")
 
-# Global Background Alerts Tracking (Cache across sessions)
 @st.cache_resource
 def get_global_state():
     return {"last_alert_time": {}}
 
 global_state = get_global_state()
 
-# Default Settings (Hardcoded for Autonomous 24/7 Scanning)
+# 24/7 Scanning Parameters
 volume_threshold = 1.5
 price_threshold = 1.2
-rsi_min = 45
-rsi_max = 75
 limit_pairs = 60
 
 # Sidebar Settings
-st.sidebar.header("Bot Configuration")
+st.sidebar.header("Configuration")
 gemini_key = st.sidebar.text_input("Gemini API Key", value=DEFAULT_GEMINI_KEY, type="password")
 enable_ai = st.sidebar.checkbox("🧠 Enable AI Trade Verifier", value=True)
 enable_btc_filter = st.sidebar.checkbox("🛡️ BTC Market Safety Filter", value=True)
 enable_1h_filter = st.sidebar.checkbox("📈 1h Trend (50 EMA) Filter", value=True)
-enable_ob_filter = st.sidebar.checkbox("🐋 Whale Order Book Filter (>55% Buyers)", value=True)
-
-if "paper_trades" not in st.session_state:
-    st.session_state.paper_trades = []
+enable_ob_filter = st.sidebar.checkbox("🐋 Order Book Dominance Filter (>55%)", value=True)
 
 def check_btc_trend():
     try:
         res = requests.get(f"{BASE_URL}/klines", params={'symbol': 'BTCUSDT', 'interval': '15m', 'limit': 30}, timeout=5)
         if res.status_code != 200:
-            return True, "BTC Data Error"
+            return "NEUTRAL", "BTC Data Error"
         ohlcv = res.json()
         closes = pd.Series([float(x[4]) for x in ohlcv])
         ema20 = closes.ewm(span=20, adjust=False).mean().iloc[-1]
         current_btc = closes.iloc[-1]
-        is_safe = current_btc >= ema20
-        msg = f"BTC: ${current_btc:,.1f} {'🟢 (Safe)' if is_safe else '🔴 (Dumping Risk)'}"
-        return is_safe, msg
+        is_bullish = current_btc >= ema20
+        status = "BULLISH" if is_bullish else "BEARISH"
+        msg = f"BTC: ${current_btc:,.1f} {'🟢 (Above 20 EMA)' if is_bullish else '🔴 (Below 20 EMA)'}"
+        return status, msg
     except Exception:
-        return True, "BTC Check Bypassed"
+        return "NEUTRAL", "BTC Check Bypassed"
 
-def check_1h_trend(raw_symbol, current_price):
+def check_1h_trend(raw_symbol, current_price, signal_type):
     try:
         res = requests.get(f"{BASE_URL}/klines", params={'symbol': raw_symbol, 'interval': '1h', 'limit': 60}, timeout=5)
         if res.status_code != 200:
@@ -214,16 +229,17 @@ def check_1h_trend(raw_symbol, current_price):
         ohlcv = res.json()
         closes = pd.Series([float(x[4]) for x in ohlcv])
         ema50 = closes.ewm(span=50, adjust=False).mean().iloc[-1]
-        return current_price >= ema50
+        if signal_type == "PUMP":
+            return current_price >= ema50
+        else:
+            return current_price <= ema50
     except Exception:
         return True
 
 def scan_market_autonomous():
-    btc_safe, btc_msg = check_btc_trend()
-    if enable_btc_filter and not btc_safe:
-        return [], btc_msg
-
+    btc_status, btc_msg = check_btc_trend()
     alerts = []
+    
     res = requests.get(f"{BASE_URL}/ticker/24hr", timeout=10)
     if res.status_code != 200:
         return alerts, btc_msg
@@ -282,31 +298,50 @@ def scan_market_autonomous():
             open_price = df['open'].iloc[-1]
             live_price_change = ((real_time_price - open_price) / open_price) * 100
             
+            is_volume_spike = current_volume > (avg_volume * volume_threshold)
+            buyer_ratio, seller_ratio = get_orderbook_ratio(raw_symbol)
+            
+            signal_detected = None
+            
+            # 1. Pump Detection (Long)
             if (
-                current_volume > (avg_volume * volume_threshold)
+                is_volume_spike
                 and live_price_change >= price_threshold
-                and (rsi_min <= current_rsi <= rsi_max)
+                and (45 <= current_rsi <= 75)
                 and real_time_price > current_ema
             ):
-                if enable_1h_filter and not check_1h_trend(raw_symbol, real_time_price):
-                    continue
+                if not (enable_btc_filter and btc_status == "BEARISH"):
+                    if not (enable_1h_filter and not check_1h_trend(raw_symbol, real_time_price, "PUMP")):
+                        if not (enable_ob_filter and buyer_ratio < 55.0):
+                            signal_detected = "PUMP"
+                            
+            # 2. Dump Detection (Short)
+            if not signal_detected:
+                if (
+                    is_volume_spike
+                    and live_price_change <= -price_threshold
+                    and (25 <= current_rsi <= 55)
+                    and real_time_price < current_ema
+                ):
+                    if not (enable_btc_filter and btc_status == "BULLISH"):
+                        if not (enable_1h_filter and not check_1h_trend(raw_symbol, real_time_price, "DUMP")):
+                            if not (enable_ob_filter and seller_ratio < 55.0):
+                                signal_detected = "DUMP"
 
-                buyer_ratio = get_orderbook_buyer_ratio(raw_symbol)
-                if enable_ob_filter and buyer_ratio < 55.0:
-                    continue
+            if signal_detected:
+                if signal_detected == "PUMP":
+                    sl_val = max(0.000001, real_time_price - (atr_val * 1.5))
+                    tp1_val = real_time_price + (atr_val * 2.5)
+                    tp2_val = real_time_price + (atr_val * 4.0)
+                    dom_str = f"Buyers {buyer_ratio}%"
+                    change_str = f"+{live_price_change:.2f}"
+                else:  # DUMP
+                    sl_val = real_time_price + (atr_val * 1.5)
+                    tp1_val = max(0.000001, real_time_price - (atr_val * 2.5))
+                    tp2_val = max(0.000001, real_time_price - (atr_val * 4.0))
+                    dom_str = f"Sellers {seller_ratio}%"
+                    change_str = f"{live_price_change:.2f}"
 
-                ai_verdict = "N/A"
-                if enable_ai and gemini_key:
-                    ai_verdict, _, _ = analyze_with_ai(
-                        display_symbol, real_time_price, round(live_price_change, 2),
-                        f"{round(current_volume / avg_volume, 1)}x", round(current_rsi, 1),
-                        pattern_found, buyer_ratio, btc_msg, gemini_key
-                    )
-
-                sl_val = max(0.000001, real_time_price - (atr_val * 1.5))
-                tp1_val = real_time_price + (atr_val * 2.5)
-                tp2_val = real_time_price + (atr_val * 4.0)
-                
                 fmt = ".4f" if real_time_price >= 1 else ".6f"
                 price_str = format(real_time_price, fmt)
                 tp1_str = format(tp1_val, fmt)
@@ -314,30 +349,37 @@ def scan_market_autonomous():
                 sl_str = format(sl_val, fmt)
                 high_str = format(item['high'], fmt)
                 low_str = format(item['low'], fmt)
-                change_str = f"{live_price_change:.2f}"
                 spike_str = f"{round(current_volume / avg_volume, 1)}x"
                 rsi_str = f"{current_rsi:.1f}"
                 
+                ai_verdict = "N/A"
+                if enable_ai and gemini_key:
+                    ai_verdict, _, _ = analyze_with_ai(
+                        signal_detected, display_symbol, real_time_price, change_str,
+                        spike_str, rsi_str, pattern_found, dom_str, btc_msg, gemini_key
+                    )
+                
                 alerts.append({
                     "raw_symbol": raw_symbol,
+                    "Type": "🟢 PUMP" if signal_detected == "PUMP" else "🔴 DUMP",
                     "Coin": display_symbol,
                     "AI Verdict": ai_verdict,
                     "Pattern": pattern_found,
                     "Live Price ($)": price_str,
-                    "15m Change (%)": f"+{change_str}%",
+                    "15m Change": f"{change_str}%",
                     "RSI (14)": rsi_str,
-                    "Buyers (%)": f"{buyer_ratio}%",
+                    "Dominance": dom_str,
                     "Target 1 (ATR)": tp1_str,
                     "Stop Loss (ATR)": sl_str,
                     "Volume Spike": spike_str
                 })
                 
-                # Cooldown check: පැයකට එක් වරක් Telegram Alert යැවීම
+                # Cooldown Check (පැයකට එක් alert එකක් පමණි)
                 last_sent = global_state["last_alert_time"].get(display_symbol, 0)
                 if current_time - last_sent > 3600:
                     send_telegram_alert(
-                        display_symbol, price_str, change_str, spike_str, rsi_str, 
-                        tp1_str, tp2_str, sl_str, high_str, low_str, buyer_ratio, pattern_found, ai_verdict
+                        signal_detected, display_symbol, price_str, change_str, spike_str, rsi_str, 
+                        tp1_str, tp2_str, sl_str, high_str, low_str, dom_str, pattern_found, ai_verdict
                     )
                     global_state["last_alert_time"][display_symbol] = current_time
                     
@@ -346,9 +388,8 @@ def scan_market_autonomous():
             
     return alerts, btc_msg
 
-# ================= 24/7 AUTONOMOUS EXECUTION =================
-# Cron-Job හෝ ඕනෑම Ping එකකින් පිටුව load වන සැණින් ස්වයංක්‍රීයව scan වේ
-with st.spinner("24/7 ස්කෑනරය ක්‍රියාත්මකයි... දත්ත පරීක්ෂා කෙරේ"):
+# ================= 24/7 EXECUTION =================
+with st.spinner("Pump & Dump 24/7 ස්කෑනරය ක්‍රියාත්මකයි..."):
     results, btc_info = scan_market_autonomous()
 
 st.caption(f"🛡️ Market Status: {btc_info} | Scanner Status: Active 24/7 Cloud")
@@ -361,7 +402,7 @@ if results:
     
     st.markdown("### 📊 Live Charts")
     for coin_data in results:
-        st.write(f"**{coin_data['Coin']} — Pattern: `{coin_data['Pattern']}`**")
+        st.write(f"**{coin_data['Type']} — {coin_data['Coin']} | Pattern: `{coin_data['Pattern']}`**")
         render_tradingview_widget(coin_data['raw_symbol'])
 else:
-    st.info("මේ මොහොතේ කොන්දේසි සපුරාලූ කාසි නොමැත. Cron-Job මඟින් පසුබිමෙන් පරීක්ෂා කරමින් පවතී.")
+    st.info("මේ මොහොතේ කොන්දේසි සපුරාලූ Pump හෝ Dump කාසි නොමැත. Cron-Job මඟින් පසුබිමෙන් පරීක්ෂා කරමින් පවතී.")
