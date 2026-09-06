@@ -37,9 +37,7 @@ def send_telegram_alert(coin, price, change, volume_spike, rsi_val, tp1, tp2, sl
 # ===================================================
 
 def render_tradingview_widget(symbol_raw):
-    # Binance Pair එක TradingView widget එකට සරිලන සේ හැඩගැස්වීම (උදා: BINANCE:BTCUSDT)
     widget_code = f"""
-    <!-- TradingView Widget BEGIN -->
     <div class="tradingview-widget-container">
       <div id="tradingview_{symbol_raw}"></div>
       <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
@@ -63,7 +61,6 @@ def render_tradingview_widget(symbol_raw):
       );
       </script>
     </div>
-    <!-- TradingView Widget END -->
     """
     components.html(widget_code, height=420)
 
@@ -100,6 +97,7 @@ st.write("---")
 
 # Sidebar Settings
 st.sidebar.header("Scanner Settings")
+enable_btc_filter = st.sidebar.checkbox("🛡️ BTC Market Safety Filter", value=True)
 volume_threshold = st.sidebar.slider("Volume Spike Multiplier", 1.2, 5.0, 1.5)
 price_threshold = st.sidebar.slider("අවම මිල වෙනස (%)", 0.5, 10.0, 1.2)
 rsi_min = st.sidebar.slider("අවම RSI අගය", 30, 60, 45)
@@ -115,16 +113,39 @@ if "sent_alerts" not in st.session_state:
 
 BASE_URL = "https://data-api.binance.vision/api/v3"
 
+def check_btc_trend():
+    try:
+        res = requests.get(f"{BASE_URL}/klines", params={'symbol': 'BTCUSDT', 'interval': '15m', 'limit': 30}, timeout=5)
+        if res.status_code != 200:
+            return True, "BTC Data Error"
+        ohlcv = res.json()
+        closes = pd.Series([float(x[4]) for x in ohlcv])
+        ema20 = closes.ewm(span=20, adjust=False).mean().iloc[-1]
+        current_btc = closes.iloc[-1]
+        
+        is_safe = current_btc >= ema20
+        msg = f"BTC: ${current_btc:,.1f} {'🟢 (Above 20 EMA - Safe)' if is_safe else '🔴 (Below 20 EMA - Market Dumping Risk)'}"
+        return is_safe, msg
+    except Exception:
+        return True, "BTC Check Bypassed"
+
 def scan_market():
+    # 1. BTC Safety Filter පරීක්ෂාව
+    btc_safe, btc_msg = check_btc_trend()
+    if enable_btc_filter:
+        if not btc_safe:
+            st.warning(f"⚠️ **Scan එක අත්හිටුවන ලදී:** {btc_msg}. වෙළඳපොළ පහත බසින බැවින් False Pump Signals වැළැක්වීමට නව Alerts නිකුත් නොකෙරේ.")
+            return []
+        else:
+            st.info(f"🛡️ {btc_msg}")
+
     alerts = []
-    
     res = requests.get(f"{BASE_URL}/ticker/24hr", timeout=10)
     if res.status_code != 200:
         st.error("Binance Data API වෙත සම්බන්ධ වීමට නොහැකි විය.")
         return alerts
         
     tickers = res.json()
-    
     active_usdt_pairs = []
     for t in tickers:
         symbol = t.get('symbol', '')
@@ -138,7 +159,6 @@ def scan_market():
             })
             
     sorted_pairs = sorted(active_usdt_pairs, key=lambda x: x['quoteVolume'], reverse=True)[:limit_pairs]
-    
     progress_bar = st.progress(0)
     
     for i, item in enumerate(sorted_pairs):
@@ -146,7 +166,7 @@ def scan_market():
         display_symbol = f"{raw_symbol[:-4]}/USDT"
         real_time_price = item['last']
         
-        if not real_time_price:
+        if not real_time_price or raw_symbol == 'BTCUSDT':
             continue
             
         try:
@@ -155,7 +175,6 @@ def scan_market():
                 params={'symbol': raw_symbol, 'interval': '15m', 'limit': 40}, 
                 timeout=5
             )
-            
             if kline_res.status_code != 200:
                 continue
                 
@@ -237,12 +256,11 @@ if st.button("Manual Scan 🔍") or auto_refresh:
             df_display = pd.DataFrame(results).drop(columns=['raw_symbol'])
             st.dataframe(df_display, use_container_width=True)
             
-            # හමුවූ සෑම කාසියක් සඳහාම TradingView Live Chart එකක් පෙන්වීම
             st.markdown("### 📊 Live TradingView Charts")
             for coin_data in results:
                 st.write(f"**{coin_data['Coin']} (15m Timeframe)**")
                 render_tradingview_widget(coin_data['raw_symbol'])
-        else:
+        elif results is not None and len(results) == 0:
             st.info("මේ මොහොතේ කොන්දේසි සපුරාලූ කාසි හමු නොවීය.")
 
 if auto_refresh:
