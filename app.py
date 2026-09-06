@@ -10,11 +10,12 @@ st.set_page_config(page_title="Crypto Pump Scanner Pro Max", layout="wide")
 TELEGRAM_BOT_TOKEN = "8277509351:AAFgtRQ6jNApDmGjaZ4ARbqAHIu7us_MACk"
 TELEGRAM_CHAT_ID = "7929509451"
 
-def send_telegram_alert(coin, price, change, volume_spike, rsi_val, tp1, tp2, sl, high_24h, low_24h, buyer_ratio):
+def send_telegram_alert(coin, price, change, volume_spike, rsi_val, tp1, tp2, sl, high_24h, low_24h, buyer_ratio, pattern_name):
     clean_symbol = coin.replace('/', '_')
     message = (
-        f"🚨 *Smart Crypto Pump Alert (Pro Max)!*\n\n"
+        f"🚨 *Smart Crypto Pump Alert!*\n\n"
         f"🪙 *Coin:* `{coin}`\n"
+        f"🕯️ *Pattern:* `🔥 {pattern_name}`\n"
         f"💵 *Entry Price:* `${price}`\n"
         f"📈 *15m Change:* `+{change}%`\n"
         f"📊 *Volume Spike:* `{volume_spike}`\n"
@@ -73,6 +74,37 @@ def render_tradingview_widget(symbol_raw):
     """
     components.html(widget_code, height=420)
 
+# --- Candlestick Pattern Detection Engine ---
+def detect_candlestick_pattern(df):
+    if len(df) < 5:
+        return "Normal Breakout"
+        
+    c1, o1, h1, l1 = df['close'].iloc[-1], df['open'].iloc[-1], df['high'].iloc[-1], df['low'].iloc[-1]
+    c2, o2, h2, l2 = df['close'].iloc[-2], df['open'].iloc[-2], df['high'].iloc[-2], df['low'].iloc[-2]
+    c3, o3, h3, l3 = df['close'].iloc[-3], df['open'].iloc[-3], df['high'].iloc[-3], df['low'].iloc[-3]
+    
+    body1 = abs(c1 - o1)
+    lower_wick1 = min(c1, o1) - l1
+    upper_wick1 = h1 - max(c1, o1)
+    
+    # 1. Bullish Engulfing
+    if (c2 < o2) and (c1 > o1) and (c1 >= o2) and (o1 <= c2):
+        return "Bullish Engulfing 🟢"
+        
+    # 2. Hammer / Bullish Pinbar (Lower wick එක body එක මෙන් 2 ගුණයකට වඩා විශාල වීම)
+    if (lower_wick1 >= 2 * body1) and (upper_wick1 <= body1 * 0.5) and (c1 >= o1):
+        return "Bullish Hammer 🔨"
+        
+    # 3. Three White Soldiers (අඛණ්ඩව කොළ කෙන්ඩල් 3ක් ඉහළට)
+    if (c1 > o1) and (c2 > o2) and (c3 > o3) and (c1 > c2 > c3):
+        return "Three White Soldiers 🚀"
+        
+    # 4. Morning Star Reversal
+    if (c3 < o3) and (abs(c2 - o2) < abs(c3 - o3) * 0.4) and (c1 > o1) and (c1 > (o3 + c3) / 2):
+        return "Morning Star 🌟"
+        
+    return "Volume Breakout ⚡"
+
 def calculate_rsi(series, period=14):
     delta = series.diff()
     gain = delta.where(delta > 0, 0.0)
@@ -114,7 +146,7 @@ with col1:
         try:
             res = send_telegram_alert(
                 "BTC/USDT", "65000.00", "2.50", "2.2x", "58.4", 
-                "66500.00", "67800.00", "64100.00", "65500.00", "63200.00", 68.5
+                "66500.00", "67800.00", "64100.00", "65500.00", "63200.00", 68.5, "Bullish Engulfing 🟢"
             )
             if res.status_code == 200:
                 st.success("✅ Telegram එකට මැසේජ් එක සාර්ථකව ගියා!")
@@ -128,6 +160,7 @@ st.write("---")
 
 # Sidebar Settings
 st.sidebar.header("Scanner Settings")
+enable_pattern_filter = st.sidebar.checkbox("🕯️ Candlestick Pattern Recognition", value=True)
 enable_btc_filter = st.sidebar.checkbox("🛡️ BTC Market Safety Filter", value=True)
 enable_1h_filter = st.sidebar.checkbox("📈 1h Trend (50 EMA) Filter", value=True)
 enable_ob_filter = st.sidebar.checkbox("🐋 Whale Order Book Filter (>55% Buyers)", value=True)
@@ -143,7 +176,6 @@ st.sidebar.markdown("---")
 auto_refresh = st.sidebar.checkbox("ස්වයංක්‍රීයව Scan වන්න (Auto-Refresh)", value=False)
 refresh_interval = st.sidebar.slider("නැවත Scan වන කාලය (මිනිත්තු)", 1, 10, 2)
 
-# Session States
 if "last_alert_time" not in st.session_state:
     st.session_state.last_alert_time = {}
 if "paper_trades" not in st.session_state:
@@ -186,7 +218,6 @@ def update_paper_trades(latest_prices):
                 tp1_p = trade["TP1 ($)"]
                 sl_p = trade["SL ($)"]
                 
-                # Check TP / SL hits
                 if current_p >= tp1_p:
                     trade["Status"] = "CLOSED (TP1 HIT 🎯)"
                     trade["PnL ($)"] = round(((tp1_p - entry_p) / entry_p) * trade["Allocated ($)"], 2)
@@ -234,7 +265,6 @@ def scan_market():
                 'low': float(t.get('lowPrice', 0))
             })
             
-    # Update Paper Trades with fresh prices
     update_paper_trades(price_dict)
             
     sorted_pairs = sorted(active_usdt_pairs, key=lambda x: x['quoteVolume'], reverse=True)[:limit_pairs]
@@ -269,6 +299,7 @@ def scan_market():
             rsi_series = calculate_rsi(df['close'], period=14)
             ema_series = df['close'].ewm(span=20, adjust=False).mean()
             atr_val = calculate_atr(df, period=14)
+            pattern_found = detect_candlestick_pattern(df)
             
             current_rsi = rsi_series.iloc[-1]
             current_ema = ema_series.iloc[-1]
@@ -308,6 +339,7 @@ def scan_market():
                 alerts.append({
                     "raw_symbol": raw_symbol,
                     "Coin": display_symbol,
+                    "Pattern": pattern_found,
                     "Live Price ($)": price_str,
                     "15m Change (%)": f"+{change_str}%",
                     "RSI (14)": rsi_str,
@@ -318,20 +350,19 @@ def scan_market():
                     "Volume Spike": spike_str
                 })
                 
-                # Cooldown check
                 last_sent = st.session_state.last_alert_time.get(display_symbol, 0)
                 if current_time - last_sent > 3600:
                     send_telegram_alert(
                         display_symbol, price_str, change_str, spike_str, rsi_str, 
-                        tp1_str, tp2_str, sl_str, high_str, low_str, buyer_ratio
+                        tp1_str, tp2_str, sl_str, high_str, low_str, buyer_ratio, pattern_found
                     )
                     st.session_state.last_alert_time[display_symbol] = current_time
                     
-                    # Auto Open Virtual Paper Trade
                     st.session_state.paper_trades.insert(0, {
                         "Time": time.strftime("%H:%M:%S"),
                         "Raw_Symbol": raw_symbol,
                         "Coin": display_symbol,
+                        "Pattern": pattern_found,
                         "Entry ($)": real_time_price,
                         "TP1 ($)": tp1_val,
                         "SL ($)": sl_val,
@@ -354,7 +385,7 @@ tab1, tab2 = st.tabs(["📡 Live Scanner", "📊 Live Paper Trading & Win-Rate"]
 
 with tab1:
     if st.button("Manual Scan 🔍") or auto_refresh:
-        with st.spinner("දත්ත, Whale Flow සහ 1h Trend විශ්ලේෂණය කරමින් පවතී..."):
+        with st.spinner("දත්ත, Whale Flow, 1h Trend සහ Candlestick Patterns විශ්ලේෂණය කරමින් පවතී..."):
             results = scan_market()
             if results:
                 st.success(f"කාසි {len(results)} ක් හමුවිය!")
@@ -366,7 +397,7 @@ with tab1:
                 
                 st.markdown("### 📊 Live TradingView Charts")
                 for coin_data in results:
-                    st.write(f"**{coin_data['Coin']} (15m Timeframe)**")
+                    st.write(f"**{coin_data['Coin']} — Pattern: `{coin_data['Pattern']}` (15m Timeframe)**")
                     render_tradingview_widget(coin_data['raw_symbol'])
             elif results is not None and len(results) == 0:
                 st.info("මේ මොහොතේ කොන්දේසි සපුරාලූ කාසි හමු නොවීය.")
