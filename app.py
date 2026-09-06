@@ -4,6 +4,7 @@ import pandas as pd
 import requests
 import json
 import re
+import html
 import time
 
 st.set_page_config(page_title="Crypto Scanner & Institutional AI Terminal", layout="wide")
@@ -16,46 +17,53 @@ BASE_URL = "https://data-api.binance.vision/api/v3"
 
 def send_scanner_telegram_alert(signal_type, coin, price, change, volume_spike, rsi_val, tp1, tp2, sl, dominance_info, pattern_name, ai_verdict):
     clean_symbol = coin.replace('/', '_')
-    icon = "🚨 *Smart Crypto Pump Alert (LONG)*" if signal_type == "PUMP" else "🩸 *Smart Crypto Dump Alert (SHORT)*"
-    message = (
+    icon = "🚨 <b>Smart Crypto Pump Alert (LONG)</b>" if signal_type == "PUMP" else "🩸 <b>Smart Crypto Dump Alert (SHORT)</b>"
+    
+    msg_html = (
         f"{icon}\n\n"
-        f"🪙 *Coin:* `{coin}`\n"
-        f"🤖 *AI Verdict:* `{ai_verdict}`\n"
-        f"🕯️ *Pattern:* `{pattern_name}`\n"
-        f"💵 *Entry Price:* `${price}`\n"
-        f"📊 *15m Change:* `{change}%` | *Vol Spike:* `{volume_spike}`\n"
-        f"🎯 *RSI (14):* `{rsi_val}` | {dominance_info}\n\n"
-        f"🎯 *Dynamic ATR Targets:*\n"
-        f"  ├ TP 1: `${tp1}`\n"
-        f"  └ TP 2: `${tp2}`\n\n"
-        f"🛑 *Dynamic ATR Stop Loss:* `${sl}`\n\n"
-        f"🔗 [Trade on Binance](https://www.binance.com/en/trade/{clean_symbol})"
+        f"🪙 <b>Coin:</b> <code>{coin}</code>\n"
+        f"🤖 <b>AI Verdict:</b> <code>{ai_verdict}</code>\n"
+        f"🕯️ <b>Pattern:</b> <code>{pattern_name}</code>\n"
+        f"💵 <b>Entry Price:</b> <code>${price}</code>\n"
+        f"📊 <b>15m Change:</b> <code>{change}%</code> | <b>Vol Spike:</b> <code>{volume_spike}</code>\n"
+        f"🎯 <b>RSI (14):</b> <code>{rsi_val}</code> | {dominance_info}\n\n"
+        f"🎯 <b>Dynamic ATR Targets:</b>\n"
+        f"  ├ TP 1: <code>${tp1}</code>\n"
+        f"  └ TP 2: <code>${tp2}</code>\n\n"
+        f"🛑 <b>Dynamic ATR Stop Loss:</b> <code>${sl}</code>\n\n"
+        f"🔗 <a href='https://www.binance.com/en/trade/{clean_symbol}'>Trade on Binance</a>"
     )
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown", "disable_web_page_preview": True}
-    return requests.post(url, json=payload, timeout=5)
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": msg_html, "parse_mode": "HTML", "disable_web_page_preview": True}
+    return requests.post(url, json=payload, timeout=8)
 
 def send_theory_telegram_alert(coin, plan):
     clean_symbol = coin.replace('/', '_')
     theories_used = ", ".join(plan.get("theories_evaluated", []))
-    message = (
-        f"🏛️ *Multi-Theory Institutional Trade Plan*\n\n"
-        f"🪙 *Coin:* `{coin}`\n"
-        f"🎯 *Direction:* `{plan.get('direction', 'LONG')}` | *Confidence:* `{plan.get('confidence', 80)}%`\n"
-        f"⚙️ *Leverage:* `{plan.get('leverage', '3x - 5x')}` | *R:R Ratio:* `{plan.get('risk_reward', '1:3')}`\n\n"
-        f"📥 *Entry Zone:* `${plan.get('entry_zone', 'Market')}`\n"
-        f"🛑 *Stop Loss:* `${plan.get('stop_loss', 'N/A')}`\n\n"
-        f"🎯 *Targets:*\n"
-        f"  ├ TP 1: `${plan.get('tp1', 'N/A')}`\n"
-        f"  └ TP 2: `${plan.get('tp2', 'N/A')}`\n"
-        f"  └ TP 3: `${plan.get('tp3', 'N/A')}`\n\n"
-        f"🧠 *Theories:* `{theories_used}`\n"
-        f"📝 *Thesis:* _{plan.get('summary', 'Setup aligned.')}_\n\n"
-        f"🔗 [Trade on Binance](https://www.binance.com/en/trade/{clean_symbol})"
+    direction_val = plan.get('direction', 'LONG')
+    icon = "🟢" if "LONG" in direction_val else "🔴"
+    
+    summary_clean = html.escape(str(plan.get('summary', 'Setup aligned.')))
+    theories_clean = html.escape(theories_used)
+
+    msg_html = (
+        f"🏛️ <b>Multi-Theory Institutional Trade Plan</b>\n\n"
+        f"🪙 <b>Coin:</b> <code>{coin}</code>\n"
+        f"🎯 <b>Direction:</b> {icon} <b>{direction_val}</b> | <b>Confidence:</b> <code>{plan.get('confidence', 80)}%</code>\n"
+        f"⚙️ <b>Leverage:</b> <code>{plan.get('leverage', '3x - 5x')}</code> | <b>R:R:</b> <code>{plan.get('risk_reward', '1:3')}</code>\n\n"
+        f"📥 <b>Entry Zone:</b> <code>${plan.get('entry_zone', 'Market')}</code>\n"
+        f"🛑 <b>Stop Loss:</b> <code>${plan.get('stop_loss', 'N/A')}</code>\n\n"
+        f"🎯 <b>Targets:</b>\n"
+        f"  ├ TP 1: <code>${plan.get('tp1', 'N/A')}</code>\n"
+        f"  ├ TP 2: <code>${plan.get('tp2', 'N/A')}</code>\n"
+        f"  └ TP 3: <code>${plan.get('tp3', 'N/A')}</code>\n\n"
+        f"🧠 <b>Theories:</b> <i>{theories_clean}</i>\n"
+        f"📝 <b>Thesis:</b> {summary_clean}\n\n"
+        f"🔗 <a href='https://www.binance.com/en/trade/{clean_symbol}'>Trade on Binance</a>"
     )
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown", "disable_web_page_preview": True}
-    return requests.post(url, json=payload, timeout=5)
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": msg_html, "parse_mode": "HTML", "disable_web_page_preview": True}
+    return requests.post(url, json=payload, timeout=8)
 
 def play_alert_sound():
     sound_code = """<audio autoplay><source src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" type="audio/ogg"></audio>"""
@@ -133,11 +141,10 @@ def detect_candlestick_pattern(df):
         return "Three Black Crows 🩸"
     return "Volume Breakout ⚡"
 
-# ================= QUANTITATIVE THEORY ENGINE (BUILT-IN FALLBACK) =================
 def compute_algorithmic_trade_plan(coin, price, df, rsi, ema20, ema50, atr, dom_info, selected_theories):
     is_bullish = price >= ema20 and rsi >= 48
     direction = "STRONG LONG" if is_bullish else "STRONG SHORT"
-    confidence = 85 if (is_bullish and price > ema50) or (not is_bullish and price < ema50) else 74
+    confidence = 86 if (is_bullish and price > ema50) or (not is_bullish and price < ema50) else 75
 
     if is_bullish:
         entry_min = price * 0.998
@@ -168,7 +175,7 @@ def compute_algorithmic_trade_plan(coin, price, df, rsi, ema20, ema50, atr, dom_
         elif "Dow" in short_name:
             desc = f"Structure confirmed with Higher Highs/Lows ({'Bullish BOS' if is_bullish else 'Bearish CHoCH'})."
         elif "Elliott" in short_name:
-            desc = f"{'Wave 3 expansion unfolding with expanding momentum' if is_bullish else 'Corrective C-wave impulse' }."
+            desc = f"{'Wave 3 expansion unfolding with expanding momentum' if is_bullish else 'Corrective C-wave impulse'}."
         elif "RSI" in short_name:
             desc = f"RSI (14) at {rsi:.1f} shows healthy momentum without immediate exhaustion divergence."
         else:
@@ -191,7 +198,6 @@ def compute_algorithmic_trade_plan(coin, price, df, rsi, ema20, ema50, atr, dom_
     }
 
 def run_universal_theory_analysis(coin, price, df, rsi, ema20, ema50, atr, dom_info, selected_theories, timeframe, api_key):
-    # If API key starts with AIzaSy, call Gemini Cloud API
     if api_key and api_key.strip().startswith("AIzaSy"):
         theories_list_str = "\n- ".join(selected_theories)
         candles_txt = df[['open', 'high', 'low', 'close', 'volume']].tail(12).to_string(index=False)
@@ -214,7 +220,6 @@ def run_universal_theory_analysis(coin, price, df, rsi, ema20, ema50, atr, dom_i
         except Exception:
             pass
 
-    # Built-in Institutional Quantitative Algorithm Fallback
     return compute_algorithmic_trade_plan(coin, price, df, rsi, ema20, ema50, atr, dom_info, selected_theories)
 
 @st.cache_resource
@@ -223,9 +228,17 @@ def get_global_state():
 
 global_state = get_global_state()
 
+# Session State for Trade Plan
+if "last_plan" not in st.session_state:
+    st.session_state.last_plan = None
+if "last_coin" not in st.session_state:
+    st.session_state.last_coin = None
+if "last_price" not in st.session_state:
+    st.session_state.last_price = 0.0
+
 # Sidebar
 st.sidebar.header("⚙️ General Settings")
-gemini_key = st.sidebar.text_input("Gemini API Key (Optional - AIzaSy...)", value=DEFAULT_GEMINI_KEY, type="password")
+gemini_key = st.sidebar.text_input("Gemini API Key (Optional)", value=DEFAULT_GEMINI_KEY, type="password")
 
 st.sidebar.header("📡 24/7 Scanner Filters")
 scan_mode = st.sidebar.radio("Scanner Direction", ["Both (Pump & Dump)", "Pump Only (Long)", "Dump Only (Short)"])
@@ -332,53 +345,72 @@ with tab_theory:
                         
                         plan = run_universal_theory_analysis(custom_pair, real_p, df_th, round(th_rsi, 1), th_ema20, th_ema50, th_atr, dom_info_str, active_theories, custom_tf, gemini_key)
                         
-                        st.markdown("---")
-                        dir_label = plan.get('direction', 'NEUTRAL')
-                        color_icon = "🟢" if "LONG" in dir_label else ("🔴" if "SHORT" in dir_label else "🟡")
-                        st.markdown(f"## {color_icon} Institutional Setup: **{dir_label}** for **{custom_pair}**")
-                        
-                        pm1, pm2, pm3, pm4, pm5 = st.columns(5)
-                        pm1.metric("Live Price", f"${real_p:,.4f}")
-                        pm2.metric("Confidence", f"{plan.get('confidence', 80)}%")
-                        pm3.metric("R:R Ratio", plan.get('risk_reward', '1:3'))
-                        pm4.metric("Recommended Leverage", plan.get('leverage', '3x - 5x'))
-                        pm5.metric("Whale Flow", f"🟢 {b_pct}% / 🔴 {s_pct}%")
-                        
-                        chart_c, card_c = st.columns([3, 2])
-                        with chart_c:
-                            st.markdown("### 📊 Interactive Technical Chart")
-                            render_tradingview_widget(custom_pair)
-                        with card_c:
-                            st.markdown("### 🎯 Complete Actionable Trade Card")
-                            plan_table = {
-                                "Trade Parameter": ["Direction", "Entry Zone", "Stop Loss (Invalidation)", "Take Profit 1", "Take Profit 2", "Take Profit 3 (Runner)", "Safe Leverage"],
-                                "Value": [
-                                    dir_label, f"${plan.get('entry_zone', 'Market')}", f"${plan.get('stop_loss', 'N/A')}",
-                                    f"${plan.get('tp1', 'N/A')}", f"${plan.get('tp2', 'N/A')}", f"${plan.get('tp3', 'N/A')}",
-                                    plan.get('leverage', '3x - 5x')
-                                ]
-                            }
-                            st.dataframe(pd.DataFrame(plan_table), use_container_width=True, hide_index=True)
-                            st.markdown("#### 📝 Trade Thesis")
-                            st.info(plan.get('summary', 'Setup aligned.'))
-                            if st.button("📲 Send Plan to Telegram", use_container_width=True):
-                                t_res_msg = send_theory_telegram_alert(f"{custom_coin_symbol}/USDT", plan)
-                                if t_res_msg.status_code == 200:
-                                    st.success("✅ Trade Plan එක සාර්ථකව Telegram වෙත යවන ලදී!")
-                        
-                        st.markdown("---")
-                        st.markdown("### 🧠 Theory-by-Theory Confluence Findings")
-                        breakdown = plan.get("theory_breakdown", [])
-                        if breakdown:
-                            b_cols = st.columns(min(len(breakdown), 3))
-                            for i_idx, b_item in enumerate(breakdown):
-                                with b_cols[i_idx % 3]:
-                                    st.success(f"**{b_item.get('theory')}**")
-                                    st.write(b_item.get('finding'))
+                        # Store in session state
+                        st.session_state.last_plan = plan
+                        st.session_state.last_coin = custom_coin_symbol
+                        st.session_state.last_price = real_p
+                        st.session_state.buyers_pct = b_pct
+                        st.session_state.sellers_pct = s_pct
                     else:
                         st.error(f"Binance හි `{custom_pair}` හමු නොවීය.")
                 except Exception as ex:
                     st.error(f"දෝෂයක් ඇති විය: {ex}")
+
+    # Render persisted plan if exists
+    if st.session_state.last_plan and st.session_state.last_coin:
+        plan = st.session_state.last_plan
+        coin_sym = st.session_state.last_coin
+        real_p = st.session_state.last_price
+        b_pct = getattr(st.session_state, 'buyers_pct', 50)
+        s_pct = getattr(st.session_state, 'sellers_pct', 50)
+
+        st.markdown("---")
+        dir_label = plan.get('direction', 'NEUTRAL')
+        color_icon = "🟢" if "LONG" in dir_label else ("🔴" if "SHORT" in dir_label else "🟡")
+        st.markdown(f"## {color_icon} Institutional Setup: **{dir_label}** for **{coin_sym}/USDT**")
+        
+        pm1, pm2, pm3, pm4, pm5 = st.columns(5)
+        pm1.metric("Live Price", f"${real_p:,.4f}")
+        pm2.metric("Confidence", f"{plan.get('confidence', 80)}%")
+        pm3.metric("R:R Ratio", plan.get('risk_reward', '1:3'))
+        pm4.metric("Recommended Leverage", plan.get('leverage', '3x - 5x'))
+        pm5.metric("Whale Flow", f"🟢 {b_pct}% / 🔴 {s_pct}%")
+        
+        chart_c, card_c = st.columns([3, 2])
+        with chart_c:
+            st.markdown("### 📊 Interactive Technical Chart")
+            render_tradingview_widget(f"{coin_sym}USDT")
+        with card_c:
+            st.markdown("### 🎯 Complete Actionable Trade Card")
+            plan_table = {
+                "Trade Parameter": ["Direction", "Entry Zone", "Stop Loss (Invalidation)", "Take Profit 1", "Take Profit 2", "Take Profit 3 (Runner)", "Safe Leverage"],
+                "Value": [
+                    dir_label, f"${plan.get('entry_zone', 'Market')}", f"${plan.get('stop_loss', 'N/A')}",
+                    f"${plan.get('tp1', 'N/A')}", f"${plan.get('tp2', 'N/A')}", f"${plan.get('tp3', 'N/A')}",
+                    plan.get('leverage', '3x - 5x')
+                ]
+            }
+            st.dataframe(pd.DataFrame(plan_table), use_container_width=True, hide_index=True)
+            st.markdown("#### 📝 Trade Thesis")
+            st.info(plan.get('summary', 'Setup aligned.'))
+            
+            if st.button("📲 Send Plan to Telegram", use_container_width=True):
+                with st.spinner("Telegram එකට යවමින් පවතී..."):
+                    t_res_msg = send_theory_telegram_alert(f"{coin_sym}/USDT", plan)
+                    if t_res_msg.status_code == 200:
+                        st.success("✅ Trade Plan එක සාර්ථකව Telegram වෙත යවන ලදී!")
+                    else:
+                        st.error(f"Telegram Error ({t_res_msg.status_code}): {t_res_msg.text}")
+        
+        st.markdown("---")
+        st.markdown("### 🧠 Theory-by-Theory Confluence Findings")
+        breakdown = plan.get("theory_breakdown", [])
+        if breakdown:
+            b_cols = st.columns(min(len(breakdown), 3))
+            for i_idx, b_item in enumerate(breakdown):
+                with b_cols[i_idx % 3]:
+                    st.success(f"**{b_item.get('theory')}**")
+                    st.write(b_item.get('finding'))
 
 # ----------------- TAB 2: 24/7 MARKET SCANNER -----------------
 with tab_scanner:
