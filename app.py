@@ -52,7 +52,6 @@ def calculate_rsi(series, period=14):
 
 st.title("🚀 Smart Crypto Pump Scanner Pro")
 
-# --- ප්‍රධාන පිටුවේ ඇති Test Button එක ---
 col1, col2 = st.columns([1, 4])
 with col1:
     if st.button("📲 Test Telegram Bot"):
@@ -70,7 +69,15 @@ with col1:
 
 st.write("---")
 
-exchange = ccxt.binance({'enableRateLimit': True})
+# Binance US/Cloud IP Block මඟහැරීම සඳහා Vision Public Data API භාවිතා කිරීම
+exchange = ccxt.binance({
+    'enableRateLimit': True,
+    'urls': {
+        'api': {
+            'public': 'https://data-api.binance.vision/api/v3',
+        }
+    }
+})
 
 # Sidebar Settings
 st.sidebar.header("Scanner Settings")
@@ -182,7 +189,6 @@ def scan_market():
             
     return pd.DataFrame(alerts)
 
-# Scan Actions
 if st.button("Manual Scan 🔍") or auto_refresh:
     with st.spinner("දත්ත විශ්ලේෂණය කරමින් පවතී..."):
         results = scan_market()
@@ -192,7 +198,6 @@ if st.button("Manual Scan 🔍") or auto_refresh:
         else:
             st.info("මේ මොහොතේ කොන්දේසි සපුරාලූ කාසි හමු නොවීය.")
 
-# Auto-refresh loop
 if auto_refresh:
     time.sleep(refresh_interval * 60)
     st.rerun()
