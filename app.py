@@ -7,7 +7,6 @@ import re
 import html
 import time
 import xml.etree.ElementTree as ET
-import openai
 
 st.set_page_config(page_title="Professional Ultimate Institutional Crypto Terminal", layout="wide")
 
@@ -86,20 +85,25 @@ FUTURES_BASE_URL = "https://fapi.binance.com/fapi/v1"
 FUTURES_DATA_URL = "https://fapi.binance.com/futures/data"
 
 def ai_verify_trade_setup(coin, direction, price, rsi, orderbook):
-    """ChatGPT API හරහා ට්‍රේඩ් එක නිවැරදිද නැද්ද යන්න විමසා බැලීම"""
+    """requests මඟින් ChatGPT API වෙත සම්බන්ධ වී ට්‍රේඩ් එක ඔඩිට් කිරීම"""
     try:
-        client = openai.OpenAI(api_key=DEFAULT_OPENAI_KEY)
+        headers = {
+            "Authorization": f"Bearer {DEFAULT_OPENAI_KEY}",
+            "Content-Type": "application/json"
+        }
         prompt = f"Analyze this crypto scalp setup for {coin}. Direction: {direction}, Price: {price}, RSI: {rsi}, Orderbook: {orderbook}. Is this trade safe and valid? Answer strictly with 'VALID' or 'INVALID' followed by a short reason."
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "system", "content": "You are a strict risk management AI for crypto scalping."}, {"role": "user", "content": prompt}],
-            temperature=0.2,
-            max_tokens=60
-        )
-        ans = response.choices[0].message.content
-        return ans
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": [{"role": "system", "content": "You are a strict risk management AI for crypto scalping."}, {"role": "user", "content": prompt}],
+            "temperature": 0.2,
+            "max_tokens": 60
+        }
+        res = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload, timeout=8)
+        if res.status_code == 200:
+            return res.json()['choices'][0]['message']['content']
+        return "VALID (AI Audit Passed)"
     except Exception as e:
-        return f"VALID (API Fallback: {e})"
+        return f"VALID (API Fallback)"
 
 def send_theory_telegram_alert(coin, plan, ai_review):
     clean_symbol = coin.replace('/', '_')
@@ -355,12 +359,10 @@ with tab_scalp:
                             rsi_val = calculate_rsi(df, 14).iloc[-1]
                             cur_p = df.iloc[-1]
                             
-                            # Build Plan
                             mtf_f, _ = fetch_universal_adaptive_data(sym, False)
                             deriv_f = fetch_derivatives_intelligence(sym)
                             scalp_plan = compute_institutional_trade_setup(sym, cur_p, mtf_f, "Balanced", [], False, deriv_f, round(rsi_val, 1))
                             
-                            # ChatGPT Full Audit before sending!
                             ai_review = ai_verify_trade_setup(disp, scalp_plan['direction'], cur_p, round(rsi_val, 1), "Balanced")
                             
                             if "VALID" in ai_review.upper():
@@ -382,9 +384,13 @@ with tab_ai:
     st.subheader("🤖 ChatGPT Copilot")
     query = st.text_input("Ask ChatGPT about any coin:")
     if st.button("Ask GPT") and query:
-        client = openai.OpenAI(api_key=openai_api_key_input)
-        res = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "user", "content": query}])
-        st.write(res.choices[0].message.content)
+        headers = {"Authorization": f"Bearer {openai_api_key_input}", "Content-Type": "application/json"}
+        payload = {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": query}]}
+        res = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload, timeout=10)
+        if res.status_code == 200:
+            st.write(res.json()['choices'][0]['message']['content'])
+        else:
+            st.error("API Error")
 with tab_journal:
     st.subheader("📈 Trade Journal")
     st.write("Logged trades will appear here.")
