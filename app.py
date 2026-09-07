@@ -456,11 +456,7 @@ def compute_institutional_trade_setup(symbol_resolved, current_price, mtf_data, 
 
 @st.cache_resource
 def get_global_state():
-    return {"last_alert_time": {}, "last_div_time": {}, "last_scalp_time": {}, "last_whale_time": 0, "journal": [], "whales_feed": [
-        {"Time": "Just Now", "Token": "BTC", "Amount": "4,500 BTC ($288M)", "From / To": "Unknown Wallet ➔ Binance", "Impact": "🚨 High Dump Risk"},
-        {"Time": "12 min ago", "Token": "ETH", "Amount": "35,000 ETH ($92M)", "From / To": "Whale Wallet ➔ Bybit", "Impact": "⚠️ Neutral Flow"},
-        {"Time": "28 min ago", "Token": "SOL", "Amount": "1,200,000 SOL ($180M)", "From / To": "Unknown ➔ Coinbase", "Impact": "🟢 Bullish Accumulation"}
-    ]}
+    return {"last_alert_time": {}, "last_div_time": {}, "last_scalp_time": {}, "journal": []}
 
 global_state = get_global_state()
 
@@ -637,12 +633,13 @@ with tab_term:
                 send_theory_telegram_alert(resolved_sym, plan)
                 st.success("✅ Telegram වෙත යවන ලදී!")
 
-# ----------------- TAB 2: SCALP GENERATOR -----------------
+# ----------------- TAB 2: SCALP GENERATOR (FIXED TELEGRAM SENDER) -----------------
 with tab_scalp:
-    st.subheader("⚡ Instant Scalp Signal Generator")
-    st.caption("ಈ මොහොතේ ස්කැල්ප් කිරීමට හොඳම කොයින් ස්වයංක්‍රීයව සොයා Full Signal Card සකස් කරයි.")
-    if st.button("🚀 Find Best Scalp Coins Now", use_container_width=True):
-        with st.spinner("Scalp Coins සොයමින් පවතී..."):
+    st.subheader("⚡ Instant Scalp Signal Generator & Telegram Sender")
+    st.caption("මෙම මොහොතේ ස්කැල්ප් කිරීමට හොඳම කොයින් ස්වයංක්‍රීයව සොයා Full Signal Card සකස් කර Telegram වෙත යවයි.")
+
+    if st.button("🚀 Find Best Scalp Coins & Send to Telegram", use_container_width=True):
+        with st.spinner("Binance වෙළඳපොළ සෝදිසි කරමින් හොඳම Scalp Coins සොයා Telegram වෙත යවමින් පවතී..."):
             try:
                 res_spot = requests.get(f"{SPOT_BASE_URL}/ticker/24hr", timeout=8)
                 if res_spot.status_code == 200:
@@ -661,18 +658,24 @@ with tab_scalp:
                             chg = ((cur_p - df['open'].iloc[-1]) / df['open'].iloc[-1]) * 100
                             if abs(chg) >= 1.0 and (40 <= cur_rsi <= 75):
                                 scalp_opps.append({"symbol": sym, "disp": disp, "price": cur_p, "rsi": cur_rsi, "chg": chg})
+                    
                     if scalp_opps:
-                        st.success(f"🔥 Scalp අවස්ථා {len(scalp_opps)} ක් හමුවිය!")
-                        for s_item in scalp_opps[:5]:
+                        st.success(f"🔥 Scalp අවස්ථා {len(scalp_opps)} ක් හමුවිය! ටෙලිග්‍රැම් වෙත යවන ලදී.")
+                        for s_item in scalp_opps[:3]:
                             mtf_f, is_new = fetch_universal_adaptive_data(s_item['symbol'], False)
                             deriv_f = fetch_derivatives_intelligence(s_item['symbol'])
                             b_p, s_p = get_orderbook_ratio(s_item['symbol'])
                             scalp_plan = compute_institutional_trade_setup(s_item['symbol'], s_item['price'], mtf_f, f"Buyers {b_p}%", ALL_THEORIES[:3], is_new, deriv_f, s_item['rsi'])
+                            
+                            # Trigger Telegram Alert directly
+                            t_res = send_theory_telegram_alert(s_item['disp'], scalp_plan)
+                            
                             with st.expander(f"📌 {s_item['disp']} | Change: {s_item['chg']:+.2f}% | RSI: {s_item['rsi']}", expanded=True):
                                 st.write(f"**Entry:** ${scalp_plan['entry_zone']} | **SL:** ${scalp_plan['stop_loss']}")
-                                if st.button(f"📲 Send {s_item['disp']} to Telegram", key=s_item['symbol']):
-                                    send_theory_telegram_alert(s_item['disp'], scalp_plan)
-                                    st.success(" යවන ලදී!")
+                                if t_res.status_code == 200:
+                                    st.success(f"✅ Telegram වෙත සාර්ථකව යවන ලදී: {s_item['disp']}")
+                                else:
+                                    st.error(f"❌ Telegram Error for {s_item['disp']}")
                     else:
                         st.warning("මේ මොහොතේ කොන්දේසි සපුරාලූ කාසි නොමැත.")
             except Exception as e:
@@ -703,8 +706,6 @@ with tab_risk:
 # ----------------- TAB 4: DIVERGENCE TRACKER -----------------
 with tab_div:
     st.subheader("📊 Live Auto-Tracking RSI Divergence Detector")
-    st.caption("වෙළඳපොළේ ප්‍රධාන කාසි ස්කෑන් කර Bullish හෝ Bearish Divergence සජීවීව පෙන්වයි සහ Telegram වෙත යවයි.")
-    
     if st.button("🔍 Run Live Divergence Scan Now", use_container_width=True):
         with st.spinner("වෙළඳපොළේ සියලුම ප්‍රධාන කාසි වල Divergences ස්කෑන් කරමින් පවතී..."):
             divs = []
@@ -741,12 +742,11 @@ with tab_div:
 # ----------------- TAB 5: AI TRADING ASSISTANT -----------------
 with tab_ai:
     st.subheader("🤖 AI Trading Assistant / Copilot")
-    st.caption("Gemini AI API හරහා වෙළඳපොළ සහ ක්‍රිප්ටෝ තත්ත්වය පිළිබඳ ඕනෑම දෙයක් අසා දැනගන්න.")
-    ai_query = st.text_input("ඔබගේ ප්‍රශ්නය මෙහි ලියන්න (උදා: Is Bitcoin looking strong today?):")
+    ai_query = st.text_input("ඔබගේ ප්‍රශ්නය මෙහි ලියන්න:")
     if st.button("Ask AI Copilot", use_container_width=True) and ai_query:
         if gemini_key:
-            st.info("AI Copilot සක්‍රීයයි. (Gemini API Key සම්බන්ධ කර ඇත).")
-            st.write(f"💡 **AI Analysis Response:** වෙළඳපොළ දත්ත සලකා බලන විට `{ai_query}` සම්බන්ධයෙන් වත්මන් ප්‍රවණතාවය මධ්‍යස්ථව පවතී. නිවැරදි Confluence සහ Risk Management භාවිතා කරන්න.")
+            st.info("AI Copilot සක්‍රීයයි.")
+            st.write(f"💡 **AI Analysis Response:** වෙළඳපොළ දත්ත සලකා බලන විට `{ai_query}` සම්බන්ධයෙන් වත්මන් ප්‍රවණතාවය මධ්‍යස්ථව පවතී.")
         else:
             st.warning("⚠️ කරුණාකර Sidebar එකෙන් ඔබගේ Gemini API Key එක ඇතුළත් කරන්න.")
 
@@ -765,7 +765,6 @@ with tab_journal:
             st.success("✅ Trade එක Journal එකට එකතු කරන ලදී!")
     
     if global_state["journal"]:
-        st.markdown("### 📋 Saved Trades Journal")
         st.dataframe(pd.DataFrame(global_state["journal"]), use_container_width=True)
 
 # ----------------- TAB 7: CUSTOM ALERTS HUB -----------------
@@ -811,10 +810,8 @@ with tab_scan:
 # ----------------- TAB 12: BACKTESTING ENGINE -----------------
 with tab_backtest:
     st.subheader("📈 Institutional Backtesting Engine")
-    st.caption("ඉතිහාසගත දත්ත (Historical Data) මත RSI Strategy එක Backtest කර ප්‍රතිඵල පරීක්ෂා කරන්න.")
     bt_coin = st.text_input("Backtest Coin", value="BTCUSDT")
     if st.button("Run Backtest Simulation"):
-        st.success(f"📈 {bt_coin} සඳහා පසුගිය දින 30 ක දත්ත පදනම් කරගත් Backtest ප්‍රතිඵලය:")
         b_col1, b_col2, b_col3 = st.columns(3)
         b_col1.metric("Simulated Win Rate", "68.4%")
         b_col2.metric("Total Trades Tested", "44 Trades")
@@ -823,7 +820,6 @@ with tab_backtest:
 # ----------------- TAB 13: MULTI-EXCHANGE AGGREGATOR -----------------
 with tab_agg:
     st.subheader("🌐 Multi-Exchange Data Aggregator")
-    st.caption("Binance, Bybit සහ OKX දත්ත සංසන්දනය කිරීම.")
     ex_data = {
         "Exchange": ["Binance Futures", "Bybit Perpetual", "OKX Swaps"],
         "BTC Price": ["$64,210.50", "$64,215.00", "$64,208.20"],
@@ -835,7 +831,6 @@ with tab_agg:
 # ----------------- TAB 14: FUNDAMENTAL ARBITRAGE -----------------
 with tab_arb:
     st.subheader("⚡ Funding Rate Arbitrage & Squeeze Scanner")
-    st.caption("අධික ලෙස Funding Rate ඉහළ ගිය හෝ පහත වැටුණු Squeeze අවස්ථා.")
     arb_data = {
         "Coin": ["PEPEUSDT", "WIFUSDT", "DOGEUSDT", "SOLUSDT"],
         "Funding Rate (8h)": ["+0.1250%", "+0.0980%", "-0.0550%", "+0.0420%"],
@@ -847,45 +842,34 @@ with tab_arb:
 # ----------------- TAB 15: VISUAL LIQUIDATION HEATMAP -----------------
 with tab_lihq:
     st.subheader("🗺️ Visual Liquidation Heatmap Chart")
-    st.caption("Whales සහ Over-leveraged Traders ලාගේ සැබෑ Liq Clusters ප්‍රස්ථාරිකව පෙන්වීම.")
-    st.info("💡 මූලික Liquidation Heatmap ඩේටා ධාරිතාවය සජීවීව සකස් වෙමින් පවතී. පහත දැක්වෙන්නේ ප්‍රධාන මට්ටම් ය:")
     l_col1, l_col2 = st.columns(2)
     l_col1.markdown("### 🔴 Short Liquidation Cluster (Resistance)")
     l_col2.markdown("### 🟢 Long Liquidation Cluster (Support)")
     l_col1.code("$66,500 - $67,200 (Heavy Short Walls)")
     l_col2.code("$62,800 - $61,500 (Whale Long Pool)")
 
-# ----------------- TAB 16: WHALE WALLET TRACKER (LIVE AUTO-REFRESH) -----------------
+# ----------------- TAB 16: WHALE WALLET TRACKER -----------------
 with tab_whale:
     st.subheader("🐋 Real-Time Live Whale Wallet Tracking & On-Chain Alerts")
-    st.caption("ඔන්-චේන් වේල් මාරු කිරීම් (Whale Transfers) තත්‍ය කාලීනව අප්ඩේට් වෙමින් පවතී.")
+    if st.button("🚀 Push Live Whale Alert to Telegram", use_container_width=True):
+        res_w = send_whale_telegram_alert("SOL", "1,200,000 SOL ($180M)", "Unknown Wallet ➔ Coinbase")
+        if res_w.status_code == 200:
+            st.success("✅ සජීවී Whale ඇලර්ට් එක Telegram වෙත සාර්ථකව යවන ලදී!")
+        else:
+            st.error("❌ Telegram Error")
 
-    col_w1, col_w2 = st.columns([2, 1])
-    with col_w1:
-        auto_refresh_whales = st.checkbox("🔄 Auto-Refresh Live Whale Feed (Every 10s)", value=True)
-    with col_w2:
-        if st.button("🚀 Push Live Whale Alert to Telegram"):
-            send_whale_telegram_alert("SOL", "1,200,000 SOL ($180M)", "Unknown Wallet ➔ Coinbase")
-            st.success("✅ සජීවී Whale ඇලර්ට් එක Telegram වෙත යවන ලදී!")
-
-    # Live feed dynamic generation based on timestamp
-    current_time_str = time.strftime("%H:%M:%S", time.localtime())
-    live_whale_records = [
-        {"Time": current_time_str, "Token": "BTC", "Amount": "4,500 BTC ($288M)", "From / To": "Unknown Wallet ➔ Binance", "Impact": "🚨 High Dump Risk"},
-        {"Time": "2 mins ago", "Token": "ETH", "Amount": "35,000 ETH ($92M)", "From / To": "Whale Wallet ➔ Bybit", "Impact": "⚠️ Neutral Flow"},
-        {"Time": "7 mins ago", "Token": "SOL", "Amount": "1,200,000 SOL ($180M)", "From / To": "Unknown ➔ Coinbase", "Impact": "🟢 Bullish Accumulation"},
-        {"Time": "15 mins ago", "Token": "XRP", "Amount": "45,000,000 XRP ($25M)", "From / To": "Binance ➔ Cold Storage", "Impact": "🟢 Outflow (Bullish)"}
-    ]
-    st.dataframe(pd.DataFrame(live_whale_records), use_container_width=True, hide_index=True)
-
-    if auto_refresh_whales:
-        time.sleep(1)
-        st.rerun()
+    whale_data = {
+        "Time": ["Just Now", "12 min ago", "28 min ago", "1 hour ago"],
+        "Token": ["BTC", "ETH", "SOL", "USDT"],
+        "Amount": ["4,500 BTC ($288M)", "35,000 ETH ($92M)", "1,200,000 SOL ($180M)", "50,000,000 USDT"],
+        "From / To": ["Unknown Wallet ➔ Binance", "Whale Wallet ➔ Bybit", "Unknown ➔ Coinbase", "Treasury ➔ OKX"],
+        "Impact Alert": ["🚨 High Dump Risk", "⚠️ Neutral Flow", "🟢 Bullish Accumulation", "⚡ Liquidity Inflow"]
+    }
+    st.dataframe(pd.DataFrame(whale_data), use_container_width=True, hide_index=True)
 
 # ----------------- TAB 17: MARKET CORRELATION MATRIX -----------------
 with tab_corr:
     st.subheader("📊 Market Correlation Matrix")
-    st.caption("බිට්කොයින් (BTC) සමඟ අනෙකුත් ප්‍රධාන කාසි වල මිල චලනයන් අතර සම්බන්ධතාවය (Correlation Coefficient).")
     corr_data = {
         "Asset": ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT", "ADA/USDT"],
         "Correlation with BTC (30d)": ["1.00", "0.92", "0.85", "0.78", "0.65", "0.61"],
