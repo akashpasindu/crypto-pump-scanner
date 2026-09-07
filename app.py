@@ -70,11 +70,12 @@ def calculate_rsi(series, period=14):
     return 100 - (100 / (1 + rs))
 
 # ================= TABS =================
-tabs = st.tabs([
+tab_names = [
     "🏛️ Terminal", "⚡ Instant Scalp", "🧮 Risk", "📊 Divergence", "🤖 AI Copilot", 
     "📈 Journal", "🔔 Alerts", "🌐 Ticker", "🔥 Heatmap", "📰 News", 
     "📡 Scanner", "📈 Backtest", "🌐 Aggregator", "⚡ Arbitrage", "🗺️ Liq Chart", "🐋 Whales", "📊 Correlation"
-])
+]
+tabs = st.tabs(tab_names)
 
 # ----------------- TAB 2: INSTANT SCALP (LIVE EXECUTION) -----------------
 with tabs[1]:
@@ -122,5 +123,5 @@ with tabs[1]:
 for i, t in enumerate(tabs):
     if i != 1:
         with t:
-            st.subheader(f"🌐 {t.replace('🏛️ ', '').replace('⚡ ', '').replace('🧮 ', '').replace('📊 ', '').replace('🤖 ', '').replace('📈 ', '').replace('🔔 ', '').replace('🔥 ', '').replace('📰 ', '').replace('📡 ', '').replace('🌐 ', '').replace('🗺️ ', '').replace('🐋 ', '')} Module")
+            st.subheader(tab_names[i])
             st.info("මෙම මොඩියුලය සක්‍රීයව පවතී.")
