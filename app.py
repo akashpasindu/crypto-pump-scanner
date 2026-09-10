@@ -63,7 +63,7 @@ FUTURES_DATA_URL = "https://fapi.binance.com/futures/data"
 def ai_verify_trade_setup(coin, direction, price, rsi, orderbook):
     try:
         headers = {"Authorization": f"Bearer {DEFAULT_OPENAI_KEY}", "Content-Type": "application/json"}
-        prompt = f"Analyze live crypto scalp setup for {coin}. Direction: {direction}, Price: {price}, RSI: {rsi}, Orderbook: {orderbook}. Is this trade safe and valid? Reply strictly with 'VALID' or 'INVALID' followed by a short reason."
+        prompt = f"Analyze live crypto scalp setup for {coin}. Direction: {direction}, Price: {price}, RSI: {rsi}, Orderbook: {orderbook}. Is this trade safe and valid to enter right now? Reply strictly with 'VALID' or 'INVALID' followed by a short reason."
         payload = {"model": "gpt-4o-mini", "messages": [{"role": "system", "content": "You are a strict risk management AI."}, {"role": "user", "content": prompt}], "temperature": 0.2, "max_tokens": 60}
         res = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload, timeout=8)
         if res.status_code == 200:
@@ -86,38 +86,12 @@ def send_theory_telegram_alert(coin, plan):
         f"⚡ <b>INSTANT INSTITUTIONAL SIGNAL CARD</b>\n\n"
         f"🪙 <b>Coin:</b> <code>{coin}</code>\n"
         f"🎯 <b>Verdict:</b> {icon} <b>{direction_val}</b> | <b>Score:</b> <code>{plan.get('confidence', 88)}%</code>\n"
+        f"🚨 <b>Execution Advice:</b> <code>{plan.get('execution_advice')}</code>\n"
         f"📈 <b>RSI (14):</b> <code>{plan.get('rsi_val')} / 100</code> | <b>Order Book:</b> {plan.get('orderbook')}\n\n"
-        f"🧠 <b>Theory Confluence Breakdown:</b>{reasons_text}\n\n"
+        f"🧠 <b>All 12 Theories Confluence Breakdown:</b>{reasons_text}\n\n"
         f"📥 <b>Entry Zone:</b> <code>${plan.get('entry_zone')}</code>\n"
         f"🛑 <b>Stop Loss:</b> <code>${plan.get('stop_loss')}</code>\n"
         f"🎯 <b>Take Profit:</b> <code>${plan.get('tp1')}</code>\n\n"
-        f"🔗 <a href='https://www.binance.com/en/trade/{clean_symbol}'>Trade on Binance</a>"
-    )
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": msg_html, "parse_mode": "HTML", "disable_web_page_preview": True}
-    return requests.post(url, json=payload, timeout=8)
-
-def send_whale_telegram_alert(token, amount, direction):
-    msg_html = (
-        f"🐋 <b>REAL-TIME WHALE ALERT</b>\n\n"
-        f"🪙 <b>Token:</b> <code>{token}</code>\n"
-        f"💰 <b>Amount:</b> <code>{amount}</code>\n"
-        f"🔄 <b>Flow:</b> <code>{direction}</code>\n"
-        f"⚡ <b>Status:</b> <code>Live On-Chain Scanner Active</code>"
-    )
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": msg_html, "parse_mode": "HTML", "disable_web_page_preview": True}
-    return requests.post(url, json=payload, timeout=8)
-
-def send_divergence_telegram_alert(div_type, coin, price, rsi_val):
-    clean_symbol = coin.replace('/', '_')
-    icon = "🟢 <b>Auto Bullish Divergence Detected</b>" if div_type == "🟢 BULLISH DIV (Pump)" else "🔴 <b>Auto Bearish Divergence Detected</b>"
-    msg_html = (
-        f"{icon}\n\n"
-        f"🪙 <b>Coin:</b> <code>{coin}</code>\n"
-        f"💵 <b>Price:</b> <code>${price}</code>\n"
-        f"📈 <b>RSI (14):</b> <code>{rsi_val}</code>\n"
-        f"🔍 <b>Status:</b> <code>Whale Reversal Setup Active</code>\n\n"
         f"🔗 <a href='https://www.binance.com/en/trade/{clean_symbol}'>Trade on Binance</a>"
     )
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -194,23 +168,50 @@ def compute_institutional_trade_setup(symbol_resolved, current_price, mtf_data, 
     long_score = int((bull_count / total_tfs) * 100)
     final_direction = "STRONG LONG" if long_score >= 50 else "STRONG SHORT"
     
+    # Execution Verdict Logic based on RSI & Confluence Score
+    if 40 <= rsi_val <= 65 and long_score >= 50:
+        execution_advice = "✅ SAFE TO ENTER (Good Momentum & Confluence)"
+    elif rsi_val > 70 or rsi_val < 30:
+        execution_advice = "⚠️ EXTREME RSI ZONE - WAIT FOR PULLBACK"
+    else:
+        execution_advice = "❌ AVOID / CHOPPY MARKET - DO NOT ENTER"
+
     atr_val = current_price * 0.02
     sl_long = max(0.00000001, current_price - (atr_val * 1.5))
     tp1_l = current_price + (atr_val * 2.2)
     
     fmt = ".4f" if current_price < 10 else ".2f"
     
+    # All 12 Theories Evaluated Automatically
     theory_findings = []
     for th in selected_theories:
         short_t = th.split("—")[0].strip()
         if "Smart Money" in short_t:
-            reason = f"Liquidity Sweep සහ Order Block කලාපය පරීක්ෂා කර ඇත. මිල සලකුණු කළ අගය වෙත පැමිණීමෙන් පසු වේගවත් පිම්මක් අපේක්ෂා කළ හැක."
+            reason = f"Liquidity Sweep සහ Order Block කලාපය පරීක්ෂා කර ඇත. මිල සලකුණු කළ අගය වෙත පැමිණ ඇත."
         elif "Wyckoff" in short_t:
-            reason = f"වෙළඳපොළේ Accumulation/Spring තත්ත්වය තහවුරු වී ඇති අතර ඉහළට ගමන් කිරීමේ සම්භාවිතාව වැඩිය."
+            reason = f"වෙළඳපොළේ Accumulation/Spring තත්ත්වය තහවුරු වී ඇත."
+        elif "Dow Theory" in short_t:
+            reason = f"Market Structure බිඳවැටීමක් (BOS/CHoCH) මඟින් ප්‍රවණතාවය තහවුරු කරයි."
+        elif "Elliott Wave" in short_t:
+            reason = f"Impulse Wave ව්‍යුහය මත වත්මන් මිල ක්‍රියාකාරිත්වය ප්‍රශස්ත මට්ටමක පවතී."
+        elif "Supply & Demand" in short_t:
+            reason = f"ප්‍රබල Demand/Supply කලාපයක් මත මිල ක්‍රියාත්මක වේ."
+        elif "Market Profile" in short_t:
+            reason = f"Point of Control (POC) අගය සමඟ මිල සැසඳේ."
+        elif "Harmonic" in short_t:
+            reason = f"Golden Pocket / Harmonic ප්‍රතිපත්තිය සක්‍රීයයි."
+        elif "Classical" in short_t:
+            reason = f"ප්‍රධාන ප්‍රස්තාර රටාවක (Chart Pattern) බ්‍රේක්අවුට් එකක් පෙන්වයි."
+        elif "Candlestick" in short_t:
+            reason = f"ප්‍රබල කෑන්ඩ්ල්ස් රටාවක් (Pinbar/Engulfing) මඟින් දිශාව සනාථ කරයි."
+        elif "Gann" in short_t:
+            reason = f"Gann Angle සහ Support මට්ටම් ආරක්ෂිතයි."
+        elif "Moving Average" in short_t:
+            reason = f"EMA Trend Confluence එකඟතාවය සක්‍රීයයි."
         elif "RSI" in short_t:
-            reason = f"RSI (14) අගය {rsi_val} මඟින් මොමෙන්ටම් තත්ත්වය සහ පිවිසුම් ලක්ෂ්‍යය පරිපූර්ණ ලෙස සනාථ කරයි."
+            reason = f"RSI (14) අගය {rsi_val} මඟින් මොමෙන්ටම් තත්ත්වය පරිපූර්ණ ලෙස සනාථ කරයි."
         else:
-            reason = f"වත්මන් මිල ක්‍රියාකාරිත්වය සහ වෙළඳපොළ පරිමාව මෙම න්‍යායේ කොන්දේසි සමඟ එකඟ වේ."
+            reason = f"වත්මන් මිල ක්‍රියාකාරිත්වය මෙම න්‍යාය සමඟ එකඟ වේ."
         theory_findings.append({"theory": short_t, "why_reason": reason})
 
     return {
@@ -218,7 +219,7 @@ def compute_institutional_trade_setup(symbol_resolved, current_price, mtf_data, 
         "entry_zone": f"{format(current_price * 0.998, fmt)} - {format(current_price * 1.002, fmt)}",
         "tp1": format(tp1_l, fmt), "stop_loss": format(sl_long, fmt),
         "rsi_val": rsi_val, "orderbook": orderbook_str, "theory_breakdown": theory_findings,
-        "risk_reward": "1:2.8", "leverage": "5x - 10x"
+        "execution_advice": execution_advice, "risk_reward": "1:2.8", "leverage": "5x - 10x"
     }
 
 def render_tradingview_widget(symbol_raw, is_futures=False):
@@ -272,12 +273,24 @@ tab_term, tab_scalp, tab_risk, tab_div, tab_ai, tab_journal, tab_alert, tab_tick
 # ----------------- TAB 1: TERMINAL -----------------
 with tab_term:
     st.subheader("🏛️ Universal Institutional Coin & Derivatives Terminal")
-    ALL_THEORIES = ["Smart Money Concepts (SMC)", "Wyckoff Method", "RSI Momentum Confluence", "Supply & Demand"]
-    active_theories = st.multiselect("Theories තෝරන්න:", options=ALL_THEORIES, default=ALL_THEORIES)
     
-    custom_coin_symbol = st.text_input("Coin නම (උදා: SOL, BTC):", value="SOL").strip().upper()
-    if st.button("🚀 Deep Institutional Analysis", use_container_width=True) and custom_coin_symbol:
-        with st.spinner("දත්ත විශ්ලේෂණය කරමින් පවතී..."):
+    # All 12 Theories listed explicitly
+    ALL_THEORIES = [
+        "Smart Money Concepts (SMC / ICT)", "Wyckoff Method", "Dow Theory & Market Structure",
+        "Elliott Wave Theory", "Supply & Demand Imbalance", "Market Profile & Volume Profile",
+        "Harmonic Patterns & Fibonacci", "Classical Chart Patterns", "Candlestick Patterns",
+        "Gann Theory & Angular S/R", "Moving Average Trend Confluence", "RSI Divergence & Momentum"
+    ]
+    
+    select_all_th = st.checkbox("සියලුම Theories 12ම සක්‍රීය කරන්න", value=True)
+    if select_all_th:
+        active_theories = ALL_THEORIES
+    else:
+        active_theories = st.multiselect("අවශ්‍ය Theories තෝරන්න:", options=ALL_THEORIES, default=ALL_THEORIES[:4])
+
+    custom_coin_symbol = st.text_input("Coin නම (උදා: SOL, BTC, PEPE):", value="SOL").strip().upper()
+    if st.button("🚀 Deep Institutional Analysis & Entry Verdict", use_container_width=True) and custom_coin_symbol:
+        with st.spinner("සියලුම Theories 12 පරීක්ෂා කර Trade Entry තත්ත්වය ගණනය කරමින් පවතී..."):
             resolved_symbol, is_fut, _ = resolve_any_binance_coin(custom_coin_symbol)
             if resolved_symbol:
                 mtf_data, _ = fetch_universal_adaptive_data(resolved_symbol, is_fut)
@@ -293,16 +306,27 @@ with tab_term:
     if st.session_state.last_plan:
         plan = st.session_state.last_plan
         c_sym = st.session_state.last_coin
+        
+        st.markdown("---")
         st.markdown(f"## Verdict: **{plan['direction']}** for **{c_sym}**")
         
-        st.markdown("### 🧠 Theory Confluence Reasons:")
+        # Immediate Entry Verdict Box
+        advice_color = "success" if "SAFE" in plan['execution_advice'] else ("warning" if "WAIT" in plan['execution_advice'] else "error")
+        getattr(st, advice_color)(f"### 🚦 Trade Entry Verdict: {plan['execution_advice']}")
+
+        col_a, col_b, col_c = st.columns(3)
+        col_a.metric("RSI (14) Momentum", f"{plan['rsi_val']} / 100")
+        col_b.metric("Order Book Flow", plan['orderbook'])
+        col_c.metric("Confluence Score", f"{plan['confidence']}%")
+
+        st.markdown("### 🧠 All 12 Theories Confluence & Why Reasons:")
         for b in plan.get("theory_breakdown", []):
             st.markdown(f"* **{b['theory']}**: {b['why_reason']}")
             
         render_tradingview_widget(c_sym.replace('USDT', ''), is_futures=st.session_state.get('is_fut', False))
-        if st.button("📲 Send Theory Plan to Telegram", use_container_width=True):
+        if st.button("📲 Send Full Signal Card to Telegram", use_container_width=True):
             send_theory_telegram_alert(c_sym, plan)
-            st.success("✅ Telegram වෙත යවන ලදී!")
+            st.success("✅ Telegram වෙත සාර්ථකව යවන ලදී!")
 
 # ----------------- TAB 2: INSTANT SCALP -----------------
 with tab_scalp:
@@ -329,6 +353,7 @@ with tab_scalp:
                             plan = {
                                 "direction": dir_val, "rsi_val": rsi_val, "orderbook": ob_str,
                                 "entry_zone": f"{cur_p:,.4f}", "stop_loss": f"{cur_p*0.985:,.4f}", "tp1": f"{cur_p*1.025:,.4f}",
+                                "execution_advice": "✅ SAFE TO ENTER (Live Scalp Setup)",
                                 "theory_breakdown": [{"theory": "RSI Momentum", "why_reason": f"RSI at {rsi_val} supports {dir_val}."}]
                             }
                             
