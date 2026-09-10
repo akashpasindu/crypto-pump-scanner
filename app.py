@@ -63,7 +63,7 @@ FUTURES_DATA_URL = "https://fapi.binance.com/futures/data"
 def ai_verify_trade_setup(coin, direction, price, rsi, orderbook):
     try:
         headers = {"Authorization": f"Bearer {DEFAULT_OPENAI_KEY}", "Content-Type": "application/json"}
-        prompt = f"Analyze live crypto scalp setup for {coin}. Direction: {direction}, Price: {price}, RSI: {rsi}, Orderbook: {orderbook}. Is this trade safe and valid to enter right now? Reply strictly with 'VALID' or 'INVALID' followed by a short reason."
+        prompt = f"Analyze live crypto setup for {coin}. Direction: {direction}, Price: {price}, RSI: {rsi}, Orderbook: {orderbook}. Is this safe? Reply strictly with 'VALID' or 'INVALID' followed by a short reason."
         payload = {"model": "gpt-4o-mini", "messages": [{"role": "system", "content": "You are a strict risk management AI."}, {"role": "user", "content": prompt}], "temperature": 0.2, "max_tokens": 60}
         res = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload, timeout=8)
         if res.status_code == 200:
@@ -72,15 +72,30 @@ def ai_verify_trade_setup(coin, direction, price, rsi, orderbook):
     except Exception as e:
         return f"VALID (Bypass: {e})"
 
+def send_pre_dump_telegram_alert(coin, details):
+    msg_html = (
+        f"🚨 <b>EARLY PRE-DUMP / LONG SQUEEZE WARNING</b> 🚨\n\n"
+        f"🪙 <b>Coin:</b> <code>{coin}</code>\n"
+        f"⚠️ <b>Detection Type:</b> <code>{details['type']}</code>\n"
+        f"📈 <b>RSI (14):</b> <code>{details['rsi']} (Overbought/Exhaustion)</code>\n"
+        f"📊 <b>Volume Spike:</b> <code>{details['vol_spike']}x</code>\n"
+        f"💵 <b>Current Price:</b> <code>${details['price']}</code>\n\n"
+        f"🔍 <i>Exhaustion and heavy selling pressure detected before major drop!</i>\n"
+        f"🔗 <a href='https://www.binance.com/en/trade/{coin.replace('/', '_')}'>Trade on Binance</a>"
+    )
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": msg_html, "parse_mode": "HTML", "disable_web_page_preview": True}
+    return requests.post(url, json=payload, timeout=8)
+
 def send_pre_pump_telegram_alert(coin, details):
     msg_html = (
-        f"🚨 <b>EARLY PRE-PUMP / PRE-DUMP DETECTOR ALERT</b> 🚨\n\n"
+        f"🚨 <b>EARLY PRE-PUMP DETECTOR ALERT</b> 🚨\n\n"
         f"🪙 <b>Coin:</b> <code>{coin}</code>\n"
         f"⚡ <b>Detection Type:</b> <code>{details['type']}</code>\n"
         f"📈 <b>RSI (14):</b> <code>{details['rsi']}</code>\n"
         f"📊 <b>Volume Spike:</b> <code>{details['vol_spike']}x</code>\n"
         f"💵 <b>Current Price:</b> <code>${details['price']}</code>\n\n"
-        f"🔍 <i>Whale accumulation or volume breakout detected before major move!</i>\n"
+        f"🔍 <i>Whale accumulation detected before major move!</i>\n"
         f"🔗 <a href='https://www.binance.com/en/trade/{coin.replace('/', '_')}'>Trade on Binance</a>"
     )
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -158,23 +173,18 @@ def compute_institutional_trade_setup(symbol_resolved, current_price, mtf_data, 
     final_direction = "STRONG LONG" if long_score >= 50 else "STRONG SHORT"
     
     if 40 <= rsi_val <= 65 and long_score >= 50:
-        execution_advice = "✅ SAFE TO ENTER (Good Momentum & Confluence)"
+        execution_advice = "✅ SAFE TO ENTER"
     elif rsi_val > 70 or rsi_val < 30:
-        execution_advice = "⚠️ EXTREME RSI ZONE - WAIT FOR PULLBACK"
+        execution_advice = "⚠️ EXTREME RSI ZONE - WAIT"
     else:
-        execution_advice = "❌ AVOID / CHOPPY MARKET - DO NOT ENTER"
+        execution_advice = "❌ AVOID / CHOPPY MARKET"
 
     atr_val = current_price * 0.02
     sl_long = max(0.00000001, current_price - (atr_val * 1.5))
     tp1_l = current_price + (atr_val * 2.2)
-    
     fmt = ".4f" if current_price < 10 else ".2f"
     
-    theory_findings = []
-    for th in selected_theories:
-        short_t = th.split("—")[0].strip()
-        theory_findings.append({"theory": short_t, "why_reason": f"වත්මන් මිල ක්‍රියාකාරිත්වය සහ පරිමාව {short_t} කොන්දේසි සමඟ තහවුරු වේ."})
-
+    theory_findings = [{"theory": th.split("—")[0].strip(), "why_reason": "ටෙක්නිකල් තත්ත්වය තහවුරු වේ."} for th in selected_theories]
     return {
         "direction": final_direction, "confidence": max(long_score, 100-long_score),
         "entry_zone": f"{format(current_price * 0.998, fmt)} - {format(current_price * 1.002, fmt)}",
@@ -224,11 +234,11 @@ global_state = get_global_state()
 if "last_plan" not in st.session_state: st.session_state.last_plan = None
 if "last_coin" not in st.session_state: st.session_state.last_coin = None
 
-# ================= ALL 17 TABS (Including Pre-Pump Early Detector) =================
-tab_term, tab_scalp, tab_prepump, tab_report, tab_risk, tab_div, tab_ai, tab_journal, tab_alert, tab_ticker, tab_heat, tab_news, tab_scan, tab_backtest, tab_agg, tab_arb, tab_corr = st.tabs([
-    "🏛️ Terminal", "⚡ Scalp", "🚨 Pre-Pump Radar", "📊 All-Coin Report", "🧮 Risk", "📊 Divergence", "🤖 AI Copilot", 
+# ================= ALL 17 TABS (Including Pre-Pump & Pre-Dump Radars) =================
+tab_term, tab_scalp, tab_prepump, tab_predump, tab_report, tab_risk, tab_div, tab_ai, tab_journal, tab_alert, tab_ticker, tab_heat, tab_news, tab_scan, tab_backtest, tab_agg, tab_arb = st.tabs([
+    "🏛️ Terminal", "⚡ Scalp", "🚨 Pre-Pump Radar", "🩸 Pre-Dump Radar", "📊 All-Coin Report", "🧮 Risk", "📊 Divergence", "🤖 AI Copilot", 
     "📈 Journal", "🔔 Alerts", "🌐 Ticker", "🔥 Heatmap", "📰 News", 
-    "📡 Scanner", "📈 Backtest", "🌐 Aggregator", "⚡ Arbitrage", "📊 Correlation"
+    "📡 Scanner", "📈 Backtest", "🌐 Aggregator", "⚡ Arbitrage"
 ])
 
 # ----------------- TAB 1: TERMINAL -----------------
@@ -316,29 +326,25 @@ with tab_scalp:
                     if not found: st.warning("මොහොතේ සුදුසු අවස්ථා නැත.")
             except Exception as e: st.error(f"Error: {e}")
 
-# ----------------- TAB 3: PRE-PUMP RADAR (NEW EARLY DETECTOR) -----------------
+# ----------------- TAB 3: PRE-PUMP RADAR -----------------
 with tab_prepump:
     st.subheader("🚨 Early Pre-Pump & Volume Spike Radar")
     st.caption("කොයින් එකක් පම්ප් වීමට හරියටම පෙර (Volume Spikes & Early Accumulation) හඳුනාගෙන කල්තියා ටෙලිග්‍රැම් වෙත දැනුම් දෙයි.")
 
     if st.button("🔍 Scan for Early Pre-Pump Setups Now", use_container_width=True):
-        with st.spinner("වෙළඳපොළේ ප්‍රී-පම්ප් ලක්ෂණ (Volume Spikes) පරීක්ෂා කරමින් පවතී..."):
+        with st.spinner("ප੍ਰී-පම්ප් ලක්ෂණ පරීක්ෂා කරමින් පවතී..."):
             try:
                 res_24hr = requests.get(f"{SPOT_BASE_URL}/ticker/24hr", timeout=10)
                 if res_24hr.status_code == 200:
                     tickers = res_24hr.json()
                     usdt_pairs = [t for t in tickers if t['symbol'].endswith('USDT') and not ('UP' in t['symbol'] or 'DOWN' in t['symbol'])]
-                    
                     pre_pump_results = []
-                    # Scan top 30 liquid coins for fast performance
                     top_liquid = sorted(usdt_pairs, key=lambda x: float(x['quoteVolume']), reverse=True)[:30]
                     
                     for coin in top_liquid:
                         sym = coin['symbol']
                         disp = f"{sym[:-4]}/USDT"
                         price = float(coin['lastPrice'])
-                        
-                        # Fetch 15m klines to evaluate recent volume and RSI
                         k_res = requests.get(f"{SPOT_BASE_URL}/klines", params={'symbol': sym, 'interval': '15m', 'limit': 15}, timeout=2)
                         if k_res.status_code == 200:
                             candles = k_res.json()
@@ -346,83 +352,91 @@ with tab_prepump:
                                 df = pd.DataFrame(candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])
                                 df['volume'] = df['volume'].astype(float)
                                 df['close'] = df['close'].astype(float)
-                                
                                 avg_vol = df['volume'].iloc[:-1].mean()
                                 last_vol = df['volume'].iloc[-1]
-                                
-                                # Detect Volume Spike (Last volume > 2.5x of average)
+                                if avg_vol > 0:
+                                    vol_spike = last_vol / avg_vol
+                                    rsi_val = round(calculate_rsi(df['close'], 14).iloc[-1], 1)
+                                    if vol_spike >= 2.0 and (40 <= rsi_val <= 60):
+                                        pre_pump_results.append({"Coin": disp, "Type": "🚀 Early Pre-Pump Accumulation", "Price": f"${price:,.4f}" if price < 10 else f"${price:,.2f}", "RSI": rsi_val, "Vol Spike": f"{vol_spike:.1f}x"})
+                    
+                    if pre_pump_results:
+                        st.success(f"🔥 ප්‍රී-පම්ප් ලක්ෂණ සහිත කොයින් {len(pre_pump_results)} ක් හමුවිය!")
+                        st.dataframe(pd.DataFrame(pre_pump_results), use_container_width=True, hide_index=True)
+                        for item in pre_pump_results[:2]:
+                            send_pre_pump_telegram_alert(item["Coin"], {"type": item["Type"], "rsi": item["RSI"], "vol_spike": item["Vol Spike"].replace("x", ""), "price": item["Price"].replace("$", "")})
+                    else:
+                        st.warning("මෙම මොහොතේ ප්‍රබල ප්‍රී-පම්ප් ලක්ෂණ සහිත කොයින් හමු නොවීය.")
+            except Exception as e: st.error(f"Error: {e}")
+
+# ----------------- TAB 4: PRE-DUMP RADAR (NEW EARLY DUMP DETECTOR) -----------------
+with tab_predump:
+    st.subheader("🩸 Early Pre-Dump & Long Squeeze Radar")
+    st.caption("කොයින් එකක් හදිසියේ ඩම්ප් වීමට හෝ බිඳී වැටීමට පෙර (Overbought Exhaustion & Heavy Volume Selling) කල්තියා හඳුනා දෙයි.")
+
+    if st.button("🔍 Scan for Early Pre-Dump Risks Now", use_container_width=True):
+        with st.spinner("ප්‍රී-ඩම්ප් සහ ෂෝට් සෙටප් ලක්ෂණ පරීක්ෂා කරමින් පවතී..."):
+            try:
+                res_24hr = requests.get(f"{SPOT_BASE_URL}/ticker/24hr", timeout=10)
+                if res_24hr.status_code == 200:
+                    tickers = res_24hr.json()
+                    usdt_pairs = [t for t in tickers if t['symbol'].endswith('USDT') and not ('UP' in t['symbol'] or 'DOWN' in t['symbol'])]
+                    pre_dump_results = []
+                    top_liquid = sorted(usdt_pairs, key=lambda x: float(x['quoteVolume']), reverse=True)[:30]
+                    
+                    for coin in top_liquid:
+                        sym = coin['symbol']
+                        disp = f"{sym[:-4]}/USDT"
+                        price = float(coin['lastPrice'])
+                        k_res = requests.get(f"{SPOT_BASE_URL}/klines", params={'symbol': sym, 'interval': '15m', 'limit': 15}, timeout=2)
+                        if k_res.status_code == 200:
+                            candles = k_res.json()
+                            if len(candles) >= 10:
+                                df = pd.DataFrame(candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])
+                                df['volume'] = df['volume'].astype(float)
+                                df['close'] = df['close'].astype(float)
+                                avg_vol = df['volume'].iloc[:-1].mean()
+                                last_vol = df['volume'].iloc[-1]
                                 if avg_vol > 0:
                                     vol_spike = last_vol / avg_vol
                                     rsi_val = round(calculate_rsi(df['close'], 14).iloc[-1], 1)
                                     
-                                    # Early Pre-Pump criteria: Volume spike with RSI recovering from oversold or consolidating (40-60)
-                                    if vol_spike >= 2.0 and (40 <= rsi_val <= 60):
-                                        setup_type = "🚀 Early Pre-Pump Accumulation"
-                                        pre_pump_results.append({
-                                            "Coin": disp,
-                                            "Type": setup_type,
-                                            "Price": f"${price:,.4f}" if price < 10 else f"${price:,.2f}",
-                                            "RSI": rsi_val,
-                                            "Vol Spike": f"{vol_spike:.1f}x",
-                                            "RawSym": sym
-                                        })
+                                    # Early Pre-Dump criteria: High volume spike with RSI > 70 (Overbought exhaustion)
+                                    if vol_spike >= 2.0 and rsi_val >= 70:
+                                        pre_dump_results.append({"Coin": disp, "Type": "⚠️ Early Pre-Dump Risk (Overbought)", "Price": f"${price:,.4f}" if price < 10 else f"${price:,.2f}", "RSI": rsi_val, "Vol Spike": f"{vol_spike:.1f}x"})
                     
-                    if pre_pump_results:
-                        st.success(f"🔥 ප්‍රී-පම්ප් ලක්ෂණ සහිත කොයින් {len(pre_pump_results)} ක් හමුවිය!")
-                        df_res = pd.DataFrame(pre_pump_results)
-                        st.dataframe(df_res.drop(columns=['RawSym']), use_container_width=True, hide_index=True)
-                        
-                        # Send top alert to Telegram automatically
-                        for item in pre_pump_results[:2]:
-                            alert_details = {
-                                "type": item["Type"],
-                                "rsi": item["RSI"],
-                                "vol_spike": item["Vol Spike"].replace("x", ""),
-                                "price": item["Price"].replace("$", "")
-                            }
-                            send_pre_pump_telegram_alert(item["Coin"], alert_details)
-                        st.info("📲 ඉහළම ප්‍රී-පම්ප් සංඥා ටෙලිග්‍රැම් වෙත ස්වයංක්‍රීයව යවන ලදී!")
+                    if pre_dump_results:
+                        st.success(f"⚠️ ප්‍රී-ඩම්ප් අවදානම් සහිත කොයින් {len(pre_dump_results)} ක් හමුවිය!")
+                        st.dataframe(pd.DataFrame(pre_dump_results), use_container_width=True, hide_index=True)
+                        for item in pre_dump_results[:2]:
+                            send_pre_dump_telegram_alert(item["Coin"], {"type": item["Type"], "rsi": item["RSI"], "vol_spike": item["Vol Spike"].replace("x", ""), "price": item["Price"].replace("$", "")})
+                        st.info("📲 ඉහළම ප්‍රී-ඩම්ප් අවදානම් ඇලර්ට් ටෙලිග්‍රැම් වෙත යවන ලදී!")
                     else:
-                        st.warning("මෙම මොහොතේ ප්‍රබල ප්‍රී-පම්ප් ලක්ෂණ සහිත කොයින් හමු නොවීය. ටික වේලාවකින් නැවත උත්සාහ කරන්න.")
-            except Exception as e:
-                st.error(f"Pre-Pump Radar Error: {e}")
+                        st.warning("මෙම මොහොතේ ප්‍රබල ප්‍රී-ඩම්ප් ලක්ෂණ සහිත කොයින් හමු නොවීය.")
+            except Exception as e: st.error(f"Error: {e}")
 
-# ----------------- TAB 4: ALL-COIN REPORT -----------------
+# ----------------- TAB 5: ALL-COIN REPORT -----------------
 with tab_report:
     st.subheader("📊 Comprehensive All-Coin Market Report")
     if st.button("📑 Generate Full Market Report (All Coins)", use_container_width=True):
-        with st.spinner("සම්පූර්ණ මාර්කට් ඩේටා ගෙන්වා වාර්තාව සකස් කරමින් පවතී..."):
+        with st.spinner("වාර්තාව සකස් කරමින් පවතී..."):
             try:
                 res_all = requests.get(f"{SPOT_BASE_URL}/ticker/24hr", timeout=10)
                 if res_all.status_code == 200:
                     all_tickers = res_all.json()
                     usdt_list = [t for t in all_tickers if t['symbol'].endswith('USDT') and not ('UP' in t['symbol'] or 'DOWN' in t['symbol'])]
-                    
                     report_rows = []
                     for t in usdt_list:
                         s_name = f"{t['symbol'][:-4]}/USDT"
                         p_val = float(t['lastPrice'])
                         chg_val = float(t['priceChangePercent'])
                         vol_val = float(t['quoteVolume'])
-                        high_v = float(t['highPrice'])
-                        low_v = float(t['lowPrice'])
-                        trend_status = "🟢 Bullish" if chg_val > 0 else "🔴 Bearish"
-                        report_rows.append({
-                            "Symbol": s_name,
-                            "Price ($)": f"${p_val:,.4f}" if p_val < 10 else f"${p_val:,.2f}",
-                            "24h Change (%)": f"{chg_val:+.2f}%",
-                            "24h High ($)": f"${high_v:,.2f}",
-                            "24h Low ($)": f"${low_v:,.2f}",
-                            "Volume (USDT)": f"${vol_val:,.0f}",
-                            "Status": trend_status
-                        })
-                    df_rep = pd.DataFrame(report_rows)
-                    st.success(f"📈 සාර්ථකයි! මුළු කොයින් සංඛ්‍යාව: {len(df_rep)}")
-                    st.dataframe(df_rep, use_container_width=True, hide_index=True)
+                        report_rows.append({"Symbol": s_name, "Price ($)": f"${p_val:,.4f}" if p_val < 10 else f"${p_val:,.2f}", "24h Change (%)": f"{chg_val:+.2f}%", "Volume": f"${vol_val:,.0f}"})
+                    st.dataframe(pd.DataFrame(report_rows), use_container_width=True, hide_index=True)
             except Exception as e: st.error(f"Error: {e}")
 
 # ----------------- OTHER TABS -----------------
-with tab_risk: st.subheader("🧮 Advanced Risk & Position Size Calculator")
+with tab_risk: st.subheader("🧮 Advanced Risk Calculator")
 with tab_div: st.subheader("📊 Live RSI Divergence Detector")
 with tab_ai: st.subheader("🤖 ChatGPT AI Trading Assistant")
 with tab_journal: st.subheader("📈 Trade P&L Journal Tracker")
@@ -436,4 +450,3 @@ with tab_scan: st.subheader("📡 24/7 Autonomous Market Scanner")
 with tab_backtest: st.subheader("📈 Institutional Backtesting Engine")
 with tab_agg: st.subheader("🌐 Multi-Exchange Data Aggregator")
 with tab_arb: st.subheader("⚡ Funding Rate Arbitrage Scanner")
-with tab_corr: st.subheader("📊 Market Correlation Matrix")
