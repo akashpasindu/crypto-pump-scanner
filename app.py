@@ -116,34 +116,43 @@ def calculate_atr(df, period=14):
     tr = pd.concat([high_low, high_cp, low_cp], axis=1).max(axis=1)
     return tr.rolling(min(period, max(1, len(df)))).mean().iloc[-1]
 
-def get_orderbook_ratio(raw_symbol):
-    for base_ep in [SPOT_BASE_URL, FUTURES_BASE_URL]:
-        try:
-            res = requests.get(f"{base_ep}/depth", params={'symbol': raw_symbol, 'limit': 20}, timeout=3)
-            if res.status_code == 200:
-                data = res.json()
-                bids = sum([float(b[1]) for b in data.get('bids', [])])
-                asks = sum([float(a[1]) for a in data.get('asks', [])])
-                total = bids + asks
-                if total > 0:
-                    return round((bids / total) * 100, 1), round((asks / total) * 100, 1)
-        except Exception: pass
+def get_orderbook_ratio(raw_symbol, is_futures=False):
+    base_ep = FUTURES_BASE_URL if is_futures else SPOT_BASE_URL
+    try:
+        res = requests.get(f"{base_ep}/depth", params={'symbol': raw_symbol, 'limit': 20}, timeout=3)
+        if res.status_code == 200:
+            data = res.json()
+            bids = sum([float(b[1]) for b in data.get('bids', [])])
+            asks = sum([float(a[1]) for a in data.get('asks', [])])
+            total = bids + asks
+            if total > 0:
+                return round((bids / total) * 100, 1), round((asks / total) * 100, 1)
+    except Exception: pass
     return 50.0, 50.0
 
 def resolve_any_binance_coin(user_input):
     clean = user_input.strip().upper()
     for quote in ['USDT', 'USDC', 'BUSD', 'FDUSD']: clean = clean.replace(quote, "")
     clean = clean.replace('/', '').replace('_', '').replace('-', '')
+    
     potential_symbols = [f"{clean}USDT", f"1000{clean}USDT", f"{clean}USDC"]
+    
+    # First check Futures (since coins like LAB are prominent on Futures perp)
     for sym in potential_symbols:
         try:
-            if requests.get(f"{SPOT_BASE_URL}/ticker/price", params={'symbol': sym}, timeout=2).status_code == 200:
+            res = requests.get(f"{FUTURES_BASE_URL}/ticker/price", params={'symbol': sym}, timeout=2)
+            if res.status_code == 200:
+                return sym, True, "Futures / Perpetual Market"
+        except Exception: pass
+
+    # Then check Spot
+    for sym in potential_symbols:
+        try:
+            res = requests.get(f"{SPOT_BASE_URL}/ticker/price", params={'symbol': sym}, timeout=2)
+            if res.status_code == 200:
                 return sym, False, "Spot Market"
         except Exception: pass
-        try:
-            if requests.get(f"{FUTURES_BASE_URL}/ticker/price", params={'symbol': sym}, timeout=2).status_code == 200:
-                return sym, True, "Futures / Perpetual"
-        except Exception: pass
+        
     return None, False, None
 
 def fetch_universal_adaptive_data(resolved_symbol, is_futures):
@@ -262,6 +271,7 @@ def get_global_state():
 global_state = get_global_state()
 if "last_plan" not in st.session_state: st.session_state.last_plan = None
 if "last_coin" not in st.session_state: st.session_state.last_coin = None
+if "market_type_info" not in st.session_state: st.session_state.market_type_info = ""
 
 # ================= ALL 17 TABS =================
 tab_term, tab_scalp, tab_prepump, tab_predump, tab_report, tab_risk, tab_div, tab_ai, tab_journal, tab_alert, tab_ticker, tab_heat, tab_news, tab_scan, tab_backtest, tab_agg, tab_arb = st.tabs([
@@ -272,7 +282,7 @@ tab_term, tab_scalp, tab_prepump, tab_predump, tab_report, tab_risk, tab_div, ta
 
 # ----------------- TAB 1: TERMINAL -----------------
 with tab_term:
-    st.subheader("🏛️ Universal Institutional Coin & Derivatives Terminal (12-Theory + AI)")
+    st.subheader("🏛️ Universal Institutional Coin & Derivatives Terminal (Spot & Futures)")
     
     ALL_THEORIES = [
         "Smart Money Concepts (SMC / ICT)", "Wyckoff Method", "Dow Theory & Market Structure",
@@ -287,22 +297,26 @@ with tab_term:
     else:
         active_theories = st.multiselect("අවශ්‍ය Theories තෝරන්න:", options=ALL_THEORIES, default=ALL_THEORIES[:4])
 
-    custom_coin_symbol = st.text_input("Coin නම (උදා: SOL, BTC, PEPE, ADA, DOGE):", value="BTC").strip().upper()
+    custom_coin_symbol = st.text_input("Coin නම (උදා: LAB, SOL, BTC, PEPE, ADA):", value="LAB").strip().upper()
     if st.button("🚀 Run 12-Theory Analysis & AI Verdict", use_container_width=True) and custom_coin_symbol:
-        with st.spinner(f"`{custom_coin_symbol}` සඳහා සියලුම න්‍යායයන් (Theories 12) පරීක්ෂා කරමින් පවතී..."):
-            resolved_symbol, is_fut, _ = resolve_any_binance_coin(custom_coin_symbol)
+        with st.spinner(f"`{custom_coin_symbol}` (Spot & Futures) පරීක්ෂා කරමින් පවතී..."):
+            resolved_symbol, is_fut, market_desc = resolve_any_binance_coin(custom_coin_symbol)
             if resolved_symbol:
+                st.session_state.market_type_info = f"🔍 Market Found: **{resolved_symbol}** ({market_desc})"
                 mtf_data, _ = fetch_universal_adaptive_data(resolved_symbol, is_fut)
                 real_p = mtf_data['15m']['price'] if '15m' in mtf_data else 1.0
                 rsi_v = mtf_data['15m']['rsi'] if '15m' in mtf_data else 50
-                b_p, s_p = get_orderbook_ratio(resolved_symbol)
+                b_p, s_p = get_orderbook_ratio(resolved_symbol, is_fut)
                 
                 plan = compute_institutional_trade_setup(resolved_symbol, real_p, mtf_data, f"Buyers {b_p}%", active_theories, rsi_v)
                 st.session_state.last_plan = plan
                 st.session_state.last_coin = resolved_symbol
                 st.session_state.is_fut = is_fut
             else:
-                st.error(f"Binance හි `{custom_coin_symbol}` සොයාගත නොහැකි විය!")
+                st.error(f"Binance (Spot හෝ Futures) හි `{custom_coin_symbol}` සොයාගත නොහැකි විය!")
+
+    if st.session_state.market_type_info:
+        st.info(st.session_state.market_type_info)
 
     if st.session_state.last_plan:
         plan = st.session_state.last_plan
@@ -347,7 +361,7 @@ with tab_scalp:
                             df = pd.DataFrame(k_res.json(), columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])['close'].astype(float)
                             rsi_val = round(calculate_rsi(df, 14).iloc[-1], 1)
                             cur_p = df.iloc[-1]
-                            b_p, s_p = get_orderbook_ratio(sym)
+                            b_p, s_p = get_orderbook_ratio(sym, False)
                             
                             dir_val = "STRONG LONG" if rsi_val < 48 else "STRONG SHORT"
                             plan = {
