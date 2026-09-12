@@ -183,7 +183,6 @@ def compute_institutional_trade_setup(symbol_resolved, current_price, mtf_data, 
     
     fmt = ".4f" if current_price < 10 else ".2f"
     
-    # 12-Theory Detailed Evaluation
     theory_findings = []
     for th in selected_theories:
         short_t = th.split("—")[0].strip()
@@ -288,9 +287,9 @@ with tab_term:
     else:
         active_theories = st.multiselect("අවශ්‍ය Theories තෝරන්න:", options=ALL_THEORIES, default=ALL_THEORIES[:4])
 
-    custom_coin_symbol = st.text_input("Coin නම (උදා: SOL, BTC, PEPE):", value="SOL").strip().upper()
+    custom_coin_symbol = st.text_input("Coin නම (උදා: SOL, BTC, PEPE, ADA, DOGE):", value="BTC").strip().upper()
     if st.button("🚀 Run 12-Theory Analysis & AI Verdict", use_container_width=True) and custom_coin_symbol:
-        with st.spinner("සියලුම න්‍යායයන් (Theories 12) පරීක්ෂා කරමින් පවතී..."):
+        with st.spinner(f"`{custom_coin_symbol}` සඳහා සියලුම න්‍යායයන් (Theories 12) පරීක්ෂා කරමින් පවතී..."):
             resolved_symbol, is_fut, _ = resolve_any_binance_coin(custom_coin_symbol)
             if resolved_symbol:
                 mtf_data, _ = fetch_universal_adaptive_data(resolved_symbol, is_fut)
@@ -302,6 +301,8 @@ with tab_term:
                 st.session_state.last_plan = plan
                 st.session_state.last_coin = resolved_symbol
                 st.session_state.is_fut = is_fut
+            else:
+                st.error(f"Binance හි `{custom_coin_symbol}` සොයාගත නොහැකි විය!")
 
     if st.session_state.last_plan:
         plan = st.session_state.last_plan
